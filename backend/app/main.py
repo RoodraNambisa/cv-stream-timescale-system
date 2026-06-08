@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .analysis import analysis_summary
 from .capture import CaptureManager, CaptureStartRequest
-from .config import LOCKED_WHILE_CAPTURE_KEYS, get_settings, reload_settings, update_dotenv
+from .config import LOCKED_WHILE_CAPTURE_KEYS, get_settings, preview_settings, reload_settings, update_dotenv
 from .detections import DetectionBatch, DetectionRecord
 from .environment import collect_environment, config_summary
 from .inference import infer_image_bytes, inference_status
@@ -104,6 +104,21 @@ async def update_config(request: ConfigUpdateRequest) -> dict:
 @app.get("/api/environment")
 async def environment() -> dict:
     return await collect_environment(get_settings())
+
+
+@app.post("/api/environment/probe")
+async def environment_probe(request: ConfigUpdateRequest) -> dict:
+    try:
+        settings_preview = preview_settings(request.values)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+    result = await collect_environment(settings_preview)
+    result["status"] = "ok"
+    result["preview"] = True
+    return result
 
 
 @app.post("/api/detections")

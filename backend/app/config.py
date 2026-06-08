@@ -143,6 +143,13 @@ def update_dotenv(values: dict[str, Any]) -> list[str]:
     return sorted(normalized)
 
 
+def preview_settings(values: dict[str, Any]) -> Settings:
+    normalized = _normalize_update_values(values)
+    current = get_settings().model_dump()
+    update = {key.lower(): value for key, value in normalized.items()}
+    return Settings(**{**current, **update})
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

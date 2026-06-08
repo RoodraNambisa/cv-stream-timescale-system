@@ -32,6 +32,7 @@ import {
   type ConfigValue,
   type DetectionSnapshot,
   type EnvironmentCheck,
+  type EnvironmentResponse,
   type InferenceStatus,
   type RemoteAction,
   type SpoolStatus,
@@ -44,6 +45,7 @@ import {
   fetchSpoolStatus,
   fetchVideoConfig,
   flushSpool,
+  probeEnvironment,
   probeVideo,
   reloadConfig,
   runRemoteAction,
@@ -315,6 +317,10 @@ function App() {
     onSuccess: () => queryClient.invalidateQueries(),
   })
 
+  const configProbeMutation = useMutation({
+    mutationFn: probeEnvironment,
+  })
+
   const remoteMutation = useMutation({
     mutationFn: ({ action, payload }: { action: RemoteAction; payload?: { remote_db_password?: string } }) =>
       runRemoteAction(action, payload),
@@ -472,6 +478,10 @@ function App() {
           onProbe={() => probeMutation.mutate()}
           probePending={probeMutation.isPending}
           probeResult={probeMutation.data}
+          onProbeConfig={(values) => configProbeMutation.mutate(values)}
+          configProbePending={configProbeMutation.isPending}
+          configProbeResult={configProbeMutation.data}
+          configProbeError={configProbeMutation.error?.message}
           onSave={(values) => updateConfigMutation.mutateAsync(values)}
           savePending={updateConfigMutation.isPending}
           saveResult={updateConfigMutation.data}
@@ -740,6 +750,10 @@ function ConfigPage({
   onProbe,
   probePending,
   probeResult,
+  onProbeConfig,
+  configProbePending,
+  configProbeResult,
+  configProbeError,
   onSave,
   savePending,
   saveResult,
@@ -755,6 +769,10 @@ function ConfigPage({
   onProbe: () => void
   probePending: boolean
   probeResult?: Record<string, unknown>
+  onProbeConfig: (values: Record<string, ConfigValue>) => void
+  configProbePending: boolean
+  configProbeResult?: EnvironmentResponse
+  configProbeError?: string
   onSave: (values: Record<string, ConfigValue>) => Promise<ActionResponse>
   savePending: boolean
   saveResult?: Record<string, unknown>
@@ -810,6 +828,8 @@ function ConfigPage({
 
   const saveMessage = saveError ?? formatSaveResult(saveResult)
   const remoteOutput = remoteError ?? formatRemoteOutput(remoteResult)
+  const configProbeMessage = configProbeError ?? formatProbeSummary(configProbeResult)
+  const configProbeChecks = configProbeResult?.checks ?? []
   const remoteConfig = pickObject(config, 'remote')
   const sshConfigured = Boolean(remoteConfig.ssh_configured)
 
@@ -889,6 +909,14 @@ function ConfigPage({
           <h2>{dirty ? '有未保存配置' : '配置已同步'}</h2>
         </div>
         <div className="action-row">
+          <button
+            type="button"
+            onClick={() => onProbeConfig(collectProbeValues(visibleDraft))}
+            disabled={configProbePending || !config}
+          >
+            <ShieldCheck size={17} aria-hidden="true" />
+            检测当前配置
+          </button>
           <button type="button" onClick={saveConfig} disabled={savePending || !dirty}>
             <Save size={17} aria-hidden="true" />
             保存并热重载
@@ -905,7 +933,17 @@ function ConfigPage({
             还原
           </button>
           {saveMessage && <span className={`action-result ${saveError ? 'error' : ''}`} aria-live="polite">{saveMessage}</span>}
+          {configProbeMessage && <span className={`action-result ${configProbeError ? 'error' : ''}`} aria-live="polite">{configProbeMessage}</span>}
         </div>
+        {configProbeChecks.length > 0 && (
+          <div className="probe-strip" aria-label="当前配置检测结果">
+            {configProbeChecks.map((check) => (
+              <span className={`mini-status ${check.status}`} key={check.name}>
+                {check.name}: {check.status}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="panel config-card accent-remote remote-panel full-config">
@@ -1317,6 +1355,31 @@ function collectConfigValues(
   return values
 }
 
+function collectProbeValues(draft: ConfigDraft): Record<string, ConfigValue> {
+  const values: Record<string, ConfigValue> = {}
+
+  for (const group of configGroups) {
+    for (const field of group.fields) {
+      const raw = draft[field.key] ?? ''
+
+      if (field.sensitive && raw === '') {
+        continue
+      }
+
+      if (field.input === 'number') {
+        if (raw === '') {
+          continue
+        }
+        values[field.key] = Number(raw)
+      } else {
+        values[field.key] = raw
+      }
+    }
+  }
+
+  return values
+}
+
 function getTabFromLocation(): TabKey {
   if (typeof window === 'undefined') {
     return 'overview'
@@ -1395,6 +1458,14 @@ function formatSaveResult(result?: Record<string, unknown>): string {
     return `已保存 ${numberFormatter.format(updated.length)} 项`
   }
   return '没有配置变更'
+}
+
+function formatProbeSummary(result?: EnvironmentResponse): string {
+  if (!result) {
+    return ''
+  }
+
+  return `预检 ${numberFormatter.format(result.summary.ok)} 正常 / ${numberFormatter.format(result.summary.warn)} 提醒 / ${numberFormatter.format(result.summary.error)} 错误`
 }
 
 function formatRemoteOutput(result?: Record<string, unknown>): string {

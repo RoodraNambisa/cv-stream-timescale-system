@@ -160,6 +160,7 @@ check_frontend_assets() {
   grep -q "分析" apps/web/src/App.tsx || fail "frontend missing analysis tab"
   grep -q "STREAM_RECEIVER_KIND" apps/web/src/App.tsx || fail "frontend missing stream receiver config"
   grep -q "GRAFANA_BASE_URL" apps/web/src/App.tsx || fail "frontend missing Grafana config"
+  grep -q "检测当前配置" apps/web/src/App.tsx || fail "frontend missing config probe action"
   grep -q "aria-live" apps/web/src/App.tsx || fail "frontend missing live regions"
   grep -q "prefers-reduced-motion" apps/web/src/App.css || fail "frontend missing reduced-motion handling"
 }
@@ -170,6 +171,7 @@ check_backend_assets() {
   grep -q '"/api/capture/start"' backend/app/main.py || fail "backend missing capture start endpoint"
   grep -q '"/api/spool/flush"' backend/app/main.py || fail "backend missing spool flush endpoint"
   grep -q '"/api/inference/image"' backend/app/main.py || fail "backend missing inference image endpoint"
+  grep -q '"/api/environment/probe"' backend/app/main.py || fail "backend missing environment probe endpoint"
   grep -q '"/api/remote/{action}"' backend/app/main.py || fail "backend missing remote action endpoint"
   grep -q "DATABASE_URL" backend/app/config.py || fail "backend missing database config"
   grep -q "INFERENCE_ENDPOINT" backend/app/config.py || fail "backend missing inference endpoint config"

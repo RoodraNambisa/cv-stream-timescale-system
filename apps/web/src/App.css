@@ -754,6 +754,13 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.probe-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .tag-row {
   display: flex;
   align-items: center;

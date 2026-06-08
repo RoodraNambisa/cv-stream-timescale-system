@@ -142,6 +142,14 @@ export async function fetchEnvironment(): Promise<EnvironmentResponse> {
   return readJson('/api/environment')
 }
 
+export async function probeEnvironment(values: Record<string, ConfigValue>): Promise<EnvironmentResponse & ActionResponse> {
+  return readJson('/api/environment/probe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values }),
+  })
+}
+
 export async function fetchSpoolStatus(): Promise<SpoolStatus> {
   return readJson('/api/spool/status')
 }

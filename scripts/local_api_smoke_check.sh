@@ -242,6 +242,32 @@ async def main() -> None:
             assert checks["stream_receiver"]["status"] == "ok", checks["stream_receiver"]
             assert checks["grafana"]["status"] == "ok", checks["grafana"]
 
+            probe = assert_status(
+                await client.post(
+                    "/api/environment/probe",
+                    json={
+                        "values": {
+                            "CAPTURE_SOURCE_KIND": "file",
+                            "CAPTURE_SOURCE_URL": str(video_path),
+                            "STREAM_RECEIVER_KIND": "mediamtx",
+                            "STREAM_RECEIVER_STATUS_URL": f"{optional_base_url}/receiver/status",
+                            "GRAFANA_BASE_URL": optional_base_url,
+                            "DATABASE_URL": "",
+                            "CONFIDENCE_THRESHOLD": 0.77,
+                        }
+                    },
+                ),
+                200,
+            )
+            probe_checks = {item["name"]: item for item in probe["checks"]}
+            assert probe["preview"] is True, probe
+            assert probe_checks["video_source"]["status"] == "ok", probe_checks["video_source"]
+            assert probe_checks["stream_receiver"]["status"] == "ok", probe_checks["stream_receiver"]
+            assert probe_checks["grafana"]["status"] == "ok", probe_checks["grafana"]
+            assert probe["config"]["inference"]["confidence_threshold"] == 0.77, probe
+            config_after_probe = assert_status(await client.get("/api/config"), 200)
+            assert config_after_probe["inference"]["confidence_threshold"] == 0.5, config_after_probe
+
             update = assert_status(
                 await client.post(
                     "/api/config",
