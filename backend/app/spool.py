@@ -16,7 +16,7 @@ from .detections import DetectionRecord
 class DetectionSpool:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
-        self._initialized = False
+        self._initialized_paths: set[Path] = set()
         self._background_task: asyncio.Task | None = None
         self._memory_queue: asyncio.Queue[DetectionRecord] = asyncio.Queue()
 
@@ -36,10 +36,10 @@ class DetectionSpool:
             pass
 
     async def initialize(self, settings: Settings) -> None:
-        if self._initialized:
+        path = self._spool_path(settings)
+        if path in self._initialized_paths:
             return
 
-        path = Path(settings.spool_sqlite_path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
         async with aiosqlite.connect(path) as database:
@@ -65,7 +65,7 @@ class DetectionSpool:
             )
             await database.commit()
 
-        self._initialized = True
+        self._initialized_paths.add(path)
 
     async def enqueue(self, records: list[DetectionRecord], settings: Settings) -> list[int]:
         await self.initialize(settings)
@@ -78,7 +78,7 @@ class DetectionSpool:
     async def status(self, settings: Settings) -> dict[str, Any]:
         await self.initialize(settings)
 
-        path = Path(settings.spool_sqlite_path)
+        path = self._spool_path(settings)
         counts = {"pending": 0, "synced": 0, "failed": 0}
 
         async with aiosqlite.connect(path) as database:
@@ -192,7 +192,7 @@ class DetectionSpool:
             if self._memory_queue.empty():
                 return []
 
-            path = Path(settings.spool_sqlite_path)
+            path = self._spool_path(settings)
             inserted_ids: list[int] = []
 
             async with aiosqlite.connect(path) as database:
@@ -216,7 +216,7 @@ class DetectionSpool:
         settings: Settings,
         limit: int,
     ) -> list[dict[str, Any]]:
-        path = Path(settings.spool_sqlite_path)
+        path = self._spool_path(settings)
         rows: list[dict[str, Any]] = []
 
         async with aiosqlite.connect(path) as database:
@@ -268,7 +268,7 @@ class DetectionSpool:
             return
 
         placeholders = ",".join("?" for _ in row_ids)
-        path = Path(settings.spool_sqlite_path)
+        path = self._spool_path(settings)
 
         async with aiosqlite.connect(path) as database:
             await database.execute(
@@ -294,7 +294,7 @@ class DetectionSpool:
             return
 
         placeholders = ",".join("?" for _ in row_ids)
-        path = Path(settings.spool_sqlite_path)
+        path = self._spool_path(settings)
 
         async with aiosqlite.connect(path) as database:
             await database.execute(
@@ -309,3 +309,6 @@ class DetectionSpool:
                 [error_message, *row_ids],
             )
             await database.commit()
+
+    def _spool_path(self, settings: Settings) -> Path:
+        return Path(settings.spool_sqlite_path).expanduser()

@@ -69,9 +69,12 @@ async def fake_infer_image_bytes(settings, image_bytes, filename):
 
 async def main() -> None:
     spool_path = Path("runtime/local_smoke_spool.db")
+    alternate_spool_path = Path("runtime/local_smoke_spool_alt.db")
     video_path = Path("runtime/local_smoke_video.avi")
     if spool_path.exists():
         spool_path.unlink()
+    if alternate_spool_path.exists():
+        alternate_spool_path.unlink()
     if video_path.exists():
         video_path.unlink()
     write_test_video(video_path)
@@ -112,6 +115,12 @@ async def main() -> None:
         summary = await analysis_summary(settings)
         assert summary["status"] == "skipped", summary
         assert summary["class_filter"] == ["person"], summary
+
+        alternate_settings = settings.model_copy(update={"spool_sqlite_path": alternate_spool_path})
+        alternate_row_ids = await spool.enqueue(records, alternate_settings)
+        assert len(alternate_row_ids) == 1, alternate_row_ids
+        alternate_status = await spool.status(alternate_settings)
+        assert alternate_status["counts"]["pending"] == 1, alternate_status
 
         capture_module.get_settings = lambda: settings
         capture_module.infer_image_bytes = fake_infer_image_bytes
