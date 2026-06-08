@@ -39,6 +39,8 @@ scripts/setup_web.sh
 scripts/local_smoke_check.sh
 ```
 
+该脚本会在 `runtime/` 生成一个短测试视频，用 `file` 输入跑采集流程，并验证类别过滤、SQLite spool 入队和无数据库分析路径。
+
 启动 FastAPI：
 
 ```bash
