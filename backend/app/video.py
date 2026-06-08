@@ -4,12 +4,13 @@ import asyncio
 import importlib.util
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from .config import Settings
 
 SUPPORTED_STREAM_MODES = {"pull", "push"}
 SUPPORTED_PUSH_PROTOCOLS = {"rtsp", "rtmp"}
+NETWORK_CAPTURE_KINDS = {"http_mjpeg", "rtsp", "rtmp"}
 
 
 def video_config_summary(settings: Settings) -> dict[str, Any]:
@@ -211,10 +212,13 @@ def resolve_video_source(settings: Settings) -> str | int | None:
             return 0
         if settings.capture_source_url.isdigit():
             return int(settings.capture_source_url)
-        return settings.capture_source_url
+        return _apply_capture_credentials(settings)
 
     if not settings.capture_source_url:
         return None
+
+    if source_kind in NETWORK_CAPTURE_KINDS:
+        return _apply_capture_credentials(settings)
 
     return settings.capture_source_url
 
@@ -241,3 +245,29 @@ def _mask_url(value: str) -> str:
         host = f"{parts.username}:***@{host}"
 
     return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+
+def _apply_capture_credentials(settings: Settings) -> str:
+    source_url = settings.capture_source_url.strip()
+    username = settings.capture_username.strip()
+    password = settings.capture_password.strip()
+    if not username:
+        return source_url
+
+    parts = urlsplit(source_url)
+    if not parts.scheme or not parts.netloc or parts.username:
+        return source_url
+
+    userinfo = quote(username, safe="")
+    if password:
+        userinfo = f"{userinfo}:{quote(password, safe='')}"
+
+    return urlunsplit(
+        (
+            parts.scheme,
+            f"{userinfo}@{parts.netloc}",
+            parts.path,
+            parts.query,
+            parts.fragment,
+        )
+    )

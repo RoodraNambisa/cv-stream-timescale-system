@@ -22,7 +22,7 @@ from backend.app.capture import CaptureManager, CaptureStartRequest, _detections
 from backend.app.config import Settings
 from backend.app.inference import _filter_inference_payload
 from backend.app.spool import DetectionSpool
-from backend.app.video import probe_video_source
+from backend.app.video import probe_video_source, resolve_video_source
 
 
 def write_test_video(path: Path) -> None:
@@ -103,6 +103,30 @@ async def main() -> None:
     records = _detections_to_records(settings, CaptureStartRequest(), filtered, frame_index=1)
     assert len(records) == 1, records
     assert records[0].object_class == "person"
+
+    authenticated_source = resolve_video_source(
+        settings.model_copy(
+            update={
+                "capture_source_kind": "rtsp",
+                "capture_source_url": "rtsp://127.0.0.1:8554/live/camera-1",
+                "capture_username": "viewer",
+                "capture_password": "p@ss word",
+            }
+        )
+    )
+    assert authenticated_source == "rtsp://viewer:p%40ss%20word@127.0.0.1:8554/live/camera-1", authenticated_source
+
+    existing_auth_source = resolve_video_source(
+        settings.model_copy(
+            update={
+                "capture_source_kind": "rtsp",
+                "capture_source_url": "rtsp://old:secret@127.0.0.1:8554/live/camera-1",
+                "capture_username": "viewer",
+                "capture_password": "changed",
+            }
+        )
+    )
+    assert existing_auth_source == "rtsp://old:secret@127.0.0.1:8554/live/camera-1", existing_auth_source
 
     spool = DetectionSpool()
     await spool.start(settings)

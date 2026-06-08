@@ -132,6 +132,8 @@ POST /api/video/probe
 http://手机IP:8080/video
 ```
 
+`CAPTURE_USERNAME` 和 `CAPTURE_PASSWORD` 会用于 HTTP/RTSP/RTMP 拉流。URL 已经带账号密码时，后端保留 URL 里的凭据；URL 没有凭据时，后端把单独配置的账号密码拼入读取地址。
+
 如果手机使用推流，配置 `STREAM_MODE=push`、`STREAM_PROTOCOL=rtmp` 或 `rtsp`，并填写 `STREAM_PUSH_URL`、账号和密码。MediaMTX 或 nginx-rtmp 可以接收 RTMP/RTSP 推流。`STREAM_PUSH_URL` 是手机发布视频的入口；`CAPTURE_SOURCE_URL` 是后端读取视频的播放地址。接收服务把发布和播放做成同一个地址时，两项可以填同一个 URL。
 
 推理接口：
