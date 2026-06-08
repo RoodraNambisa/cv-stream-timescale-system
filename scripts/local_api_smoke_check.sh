@@ -163,6 +163,31 @@ class OptionalServiceHandler(BaseHTTPRequestHandler):
         return
 
 
+class FakeDatabaseConnection:
+    async def fetchval(self, query, *args):
+        normalized = " ".join(query.lower().split())
+        if "select version" in normalized:
+            return "PostgreSQL fake"
+        if "pg_extension" in normalized and "timescaledb" in normalized:
+            return "fake"
+        if "timescaledb_information.hypertables" in normalized:
+            return True
+        if "timescaledb_information.continuous_aggregates" in normalized:
+            return True
+        return None
+
+    async def fetch(self, query, *args):
+        table_names = args[0] if args else []
+        return [{"table_name": table_name} for table_name in table_names]
+
+    async def close(self):
+        return None
+
+
+async def fake_database_connect(*args, **kwargs):
+    return FakeDatabaseConnection()
+
+
 async def main() -> None:
     video_path = ROOT / "runtime" / "local_api_smoke_video.avi"
     spool_path = ROOT / "runtime" / "local_api_smoke_spool.db"
@@ -218,12 +243,15 @@ async def main() -> None:
 
     import backend.app.capture as capture_module
     import backend.app.config as config_module
+    import backend.app.environment as environment_module
     import backend.app.inference as inference_module
     import backend.app.main as app_main
 
     original_capture_infer = capture_module.infer_image_bytes
+    original_environment_connect = environment_module.asyncpg.connect
     original_local_image_inference = inference_module._local_image_inference
     capture_module.infer_image_bytes = fake_capture_infer
+    environment_module.asyncpg.connect = fake_database_connect
     inference_module._local_image_inference = fake_local_image_inference
 
     started = False
@@ -275,6 +303,24 @@ async def main() -> None:
             assert probe["config"]["inference"]["confidence_threshold"] == 0.77, probe
             config_after_probe = assert_status(await client.get("/api/config"), 200)
             assert config_after_probe["inference"]["confidence_threshold"] == 0.5, config_after_probe
+
+            schema_probe = assert_status(
+                await client.post(
+                    "/api/environment/probe",
+                    json={
+                        "values": {
+                            "DATABASE_URL": "postgresql://cv_user:secret@db.local:5432/cv_stream",
+                            "DATABASE_CONNECT_TIMEOUT": 1,
+                        }
+                    },
+                ),
+                200,
+            )
+            schema_checks = {item["name"]: item for item in schema_probe["checks"]}
+            assert schema_checks["database"]["status"] == "ok", schema_checks["database"]
+            assert schema_checks["timescaledb"]["status"] == "ok", schema_checks["timescaledb"]
+            assert schema_checks["database_schema"]["status"] == "ok", schema_checks["database_schema"]
+            assert schema_checks["database_schema"]["details"]["hypertable_exists"] is True, schema_checks["database_schema"]
 
             update = assert_status(
                 await client.post(
@@ -363,6 +409,7 @@ async def main() -> None:
         print("local_api_smoke_check_ok")
     finally:
         capture_module.infer_image_bytes = original_capture_infer
+        environment_module.asyncpg.connect = original_environment_connect
         inference_module._local_image_inference = original_local_image_inference
         if started:
             await app_main.shutdown()

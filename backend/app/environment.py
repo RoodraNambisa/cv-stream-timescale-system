@@ -18,6 +18,12 @@ from .video import probe_video_source
 
 
 Check = dict[str, Any]
+CORE_SCHEMA_TABLES = (
+    "device",
+    "cv_task",
+    "cv_result_meta",
+    "cv_detection_stream",
+)
 
 
 def ok(name: str, message: str, details: dict[str, Any] | None = None) -> Check:
@@ -121,6 +127,7 @@ async def check_database(settings: Settings) -> list[Check]:
         return [
             warn("database", "数据库未配置"),
             warn("timescaledb", "TimescaleDB 未检测"),
+            warn("database_schema", "数据库 schema 未检测"),
         ]
 
     safe_url = mask_url(settings.database_url)
@@ -134,6 +141,7 @@ async def check_database(settings: Settings) -> list[Check]:
         return [
             error("database", "数据库连接失败", {"url": safe_url, "error": str(exc)}),
             warn("timescaledb", "数据库未连接，无法检测 TimescaleDB"),
+            warn("database_schema", "数据库未连接，无法检测 schema"),
         ]
 
     try:
@@ -141,6 +149,7 @@ async def check_database(settings: Settings) -> list[Check]:
         timescale_version = await connection.fetchval(
             "select extversion from pg_extension where extname = 'timescaledb';"
         )
+        schema_check = await check_database_schema(connection, bool(timescale_version))
     finally:
         await connection.close()
 
@@ -153,7 +162,71 @@ async def check_database(settings: Settings) -> list[Check]:
     else:
         checks.append(warn("timescaledb", "数据库未启用 TimescaleDB 扩展"))
 
+    checks.append(schema_check)
+
     return checks
+
+
+async def check_database_schema(connection: asyncpg.Connection, timescale_enabled: bool) -> Check:
+    try:
+        rows = await connection.fetch(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = ANY($1::text[])
+            """,
+            list(CORE_SCHEMA_TABLES),
+        )
+        existing_tables = {row["table_name"] for row in rows}
+        missing_tables = sorted(set(CORE_SCHEMA_TABLES) - existing_tables)
+
+        hypertable_exists = False
+        aggregate_exists = False
+        if timescale_enabled:
+            hypertable_exists = bool(
+                await connection.fetchval(
+                    """
+                    SELECT EXISTS (
+                      SELECT 1
+                      FROM timescaledb_information.hypertables
+                      WHERE hypertable_name = 'cv_detection_stream'
+                    )
+                    """
+                )
+            )
+            aggregate_exists = bool(
+                await connection.fetchval(
+                    """
+                    SELECT EXISTS (
+                      SELECT 1
+                      FROM timescaledb_information.continuous_aggregates
+                      WHERE view_name = 'minutely_object_stats'
+                    )
+                    """
+                )
+            )
+
+        details = {
+            "required_tables": list(CORE_SCHEMA_TABLES),
+            "existing_tables": sorted(existing_tables),
+            "missing_tables": missing_tables,
+            "hypertable_exists": hypertable_exists,
+            "continuous_aggregate_exists": aggregate_exists,
+        }
+
+        if missing_tables:
+            return warn("database_schema", "数据库 schema 未完整应用", details)
+
+        if not timescale_enabled:
+            return warn("database_schema", "TimescaleDB 未启用，无法确认超表和连续聚合", details)
+
+        if not hypertable_exists or not aggregate_exists:
+            return warn("database_schema", "TimescaleDB 对象未完整应用", details)
+
+        return ok("database_schema", "数据库 schema 已就绪", details)
+    except Exception as exc:
+        return warn("database_schema", "数据库 schema 检测失败", {"error": str(exc)})
 
 
 async def check_video_source(settings: Settings) -> Check:

@@ -86,7 +86,7 @@ http://127.0.0.1:8000/api/health
 http://127.0.0.1:8000/api/environment
 ```
 
-该接口返回 Python、OpenCV、PyTorch/CUDA、数据库、TimescaleDB、视频源、推理端和 SQLite 缓存目录状态。缺少本地推理依赖时会显示提醒。
+该接口返回 Python、OpenCV、PyTorch/CUDA、数据库、TimescaleDB、数据库 schema、视频源、推理端和 SQLite 缓存目录状态。缺少本地推理依赖时会显示提醒。
 
 配置接口：
 

@@ -457,6 +457,7 @@ function App() {
         <SignalCard icon={Video} label="视频源" check={checkFor('video_source')} fallback="待配置" />
         <SignalCard icon={Cpu} label="推理端" check={checkFor('inference')} fallback="本地默认" />
         <SignalCard icon={Database} label="数据库" check={checkFor('database')} fallback="待检测" />
+        <SignalCard icon={Database} label="数据库结构" check={checkFor('database_schema')} fallback="待检测" />
         <SignalCard icon={HardDrive} label="缓存队列" check={checkFor('spool')} fallback="待检测" />
         <SignalCard icon={RadioTower} label="流媒体接收器" check={checkFor('stream_receiver')} fallback="可选未配置" />
         <SignalCard icon={RadioTower} label="远端 API" check={checkFor('remote_api')} fallback="可选未配置" />
