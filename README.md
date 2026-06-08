@@ -41,6 +41,14 @@ scripts/local_smoke_check.sh
 
 该脚本会在 `runtime/` 生成一个短测试视频，用 `file` 输入跑采集流程，并验证类别过滤、SQLite spool 入队和无数据库分析路径。
 
+执行 API 级本地 smoke check：
+
+```bash
+scripts/local_api_smoke_check.sh
+```
+
+该脚本临时接管 `.env` 并在结束时恢复，直接请求 FastAPI 接口，覆盖配置热重载、运行锁定、spool 入队、无数据库 flush、分析接口、本地推理接口和采集状态。
+
 启动 FastAPI：
 
 ```bash
