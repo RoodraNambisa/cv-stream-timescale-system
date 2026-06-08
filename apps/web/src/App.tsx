@@ -395,6 +395,7 @@ function App() {
         <SignalCard icon={Cpu} label="推理端" check={checkFor('inference')} fallback="本地默认" />
         <SignalCard icon={Database} label="数据库" check={checkFor('database')} fallback="待检测" />
         <SignalCard icon={HardDrive} label="缓存队列" check={checkFor('spool')} fallback="待检测" />
+        <SignalCard icon={RadioTower} label="远端 API" check={checkFor('remote_api')} fallback="可选未配置" />
       </section>
 
       {activeTab === 'overview' && (

@@ -11,12 +11,16 @@ fi
 
 .venv/bin/python - <<'PY'
 import asyncio
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import cv2
 import numpy as np
 
 from backend.app.analysis import analysis_summary
+from backend.app.environment import check_remote_api
 import backend.app.capture as capture_module
 from backend.app.capture import CaptureManager, CaptureStartRequest, _detections_to_records
 from backend.app.config import Settings
@@ -66,6 +70,26 @@ async def fake_infer_image_bytes(settings, image_bytes, filename):
             ],
         },
     )
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/api/health":
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        body = json.dumps(
+            {"service": "local-smoke-api", "status": "ok", "version": "test"}
+        ).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        return
 
 
 async def main() -> None:
@@ -140,6 +164,23 @@ async def main() -> None:
         summary = await analysis_summary(settings)
         assert summary["status"] == "skipped", summary
         assert summary["class_filter"] == ["person"], summary
+
+        remote_api_missing = await check_remote_api(settings)
+        assert remote_api_missing["status"] == "warn", remote_api_missing
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), HealthHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            remote_api_settings = settings.model_copy(
+                update={"remote_api_base_url": f"http://127.0.0.1:{server.server_port}"}
+            )
+            remote_api_ok = await check_remote_api(remote_api_settings)
+            assert remote_api_ok["status"] == "ok", remote_api_ok
+            assert remote_api_ok["details"]["service"] == "local-smoke-api", remote_api_ok
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
 
         alternate_settings = settings.model_copy(update={"spool_sqlite_path": alternate_spool_path})
         alternate_row_ids = await spool.enqueue(records, alternate_settings)

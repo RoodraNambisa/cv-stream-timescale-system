@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import asyncpg
+import httpx
 
 from .config import Settings
 from .inference import inference_status
@@ -175,6 +176,41 @@ async def check_inference_endpoint(settings: Settings) -> Check:
     }
 
 
+async def check_remote_api(settings: Settings) -> Check:
+    if not settings.remote_api_base_url:
+        return warn("remote_api", "远端 API 未配置")
+
+    base_url = settings.remote_api_base_url.rstrip("/")
+    safe_url = mask_url(base_url)
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(f"{base_url}/api/health")
+    except Exception as exc:
+        return error("remote_api", "远端 API 连接失败", {"url": safe_url, "error": str(exc)})
+
+    if response.status_code >= 400:
+        return error(
+            "remote_api",
+            "远端 API 状态异常",
+            {"url": safe_url, "status_code": response.status_code},
+        )
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+
+    return ok(
+        "remote_api",
+        "远端 API 可达",
+        {
+            "url": safe_url,
+            "service": payload.get("service"),
+            "version": payload.get("version"),
+        },
+    )
+
+
 def config_summary(settings: Settings) -> dict[str, Any]:
     return {
         "capture": {
@@ -242,6 +278,7 @@ async def collect_environment(settings: Settings) -> dict[str, Any]:
     checks.extend(await check_database(settings))
     checks.append(await check_video_source(settings))
     checks.append(await check_inference_endpoint(settings))
+    checks.append(await check_remote_api(settings))
 
     summary = {
         "ok": sum(1 for item in checks if item["status"] == "ok"),
