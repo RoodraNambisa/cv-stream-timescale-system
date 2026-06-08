@@ -246,13 +246,23 @@ async def main() -> None:
     import backend.app.environment as environment_module
     import backend.app.inference as inference_module
     import backend.app.main as app_main
+    import backend.app.remote_ops as remote_ops_module
 
     original_capture_infer = capture_module.infer_image_bytes
     original_environment_connect = environment_module.asyncpg.connect
     original_local_image_inference = inference_module._local_image_inference
+    original_remote_actions = remote_ops_module.REMOTE_ACTIONS.copy()
     capture_module.infer_image_bytes = fake_capture_infer
     environment_module.asyncpg.connect = fake_database_connect
     inference_module._local_image_inference = fake_local_image_inference
+    remote_ops_module.REMOTE_ACTIONS["apply_schema"] = (
+        [
+            "bash",
+            "-c",
+            "test \"$DATABASE_URL\" = 'postgresql://cv_user:secret@db.local:5432/cv_stream' && echo schema-direct",
+        ],
+        10,
+    )
 
     started = False
     try:
@@ -321,6 +331,23 @@ async def main() -> None:
             assert schema_checks["timescaledb"]["status"] == "ok", schema_checks["timescaledb"]
             assert schema_checks["database_schema"]["status"] == "ok", schema_checks["database_schema"]
             assert schema_checks["database_schema"]["details"]["hypertable_exists"] is True, schema_checks["database_schema"]
+
+            db_config = assert_status(
+                await client.post(
+                    "/api/config",
+                    json={"values": {"DATABASE_URL": "postgresql://cv_user:secret@db.local:5432/cv_stream"}},
+                ),
+                200,
+            )
+            assert "DATABASE_URL" in db_config["updated"], db_config
+            apply_schema = assert_status(await client.post("/api/remote/apply_schema", json={}), 200)
+            assert apply_schema["status"] == "ok", apply_schema
+            assert "schema-direct" in apply_schema["stdout"], apply_schema
+            cleared_db = assert_status(
+                await client.post("/api/config", json={"values": {"DATABASE_URL": ""}}),
+                200,
+            )
+            assert "DATABASE_URL" in cleared_db["updated"], cleared_db
 
             update = assert_status(
                 await client.post(
@@ -411,6 +438,8 @@ async def main() -> None:
         capture_module.infer_image_bytes = original_capture_infer
         environment_module.asyncpg.connect = original_environment_connect
         inference_module._local_image_inference = original_local_image_inference
+        remote_ops_module.REMOTE_ACTIONS.clear()
+        remote_ops_module.REMOTE_ACTIONS.update(original_remote_actions)
         if started:
             await app_main.shutdown()
         if original_dotenv is None:

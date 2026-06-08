@@ -247,6 +247,7 @@ const remoteActions: Array<{ action: RemoteAction; label: string; icon: typeof A
   { action: 'sync', label: 'SSH 同步', icon: ArrowDownUp },
   { action: 'setup', label: 'SSH 安装', icon: Wrench },
   { action: 'configure_database', label: 'SSH 配库', icon: Database },
+  { action: 'apply_schema', label: '应用数据库结构', icon: Database },
   { action: 'api_start', label: 'SSH 启动 API', icon: Play },
   { action: 'api_status', label: 'SSH API 状态', icon: Activity },
   { action: 'api_stop', label: 'SSH 停止 API', icon: Square },
@@ -951,11 +952,11 @@ function ConfigPage({
       </div>
 
       <div className="panel config-card accent-remote remote-panel full-config">
-        <PanelHeading eyebrow="Remote Ops" title="SSH 远端管理" icon={Server} />
+        <PanelHeading eyebrow="Remote Ops" title="远端与数据库管理" icon={Server} />
         <div className={`notice ${sshConfigured ? 'ok' : 'warn'}`}>
           {sshConfigured
             ? 'SSH 已配置，仅用于远端检测、同步、安装、配库和启停 API。'
-            : 'SSH 未配置；数据库和推理 API 仍可通过直连 URL 使用。'}
+            : 'SSH 未配置；数据库、schema 应用和推理 API 仍可通过直连 URL 使用。'}
         </div>
         <div className="remote-password-row">
           <label className="config-field">

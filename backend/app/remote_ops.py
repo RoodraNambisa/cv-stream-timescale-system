@@ -19,6 +19,7 @@ REMOTE_ACTIONS: dict[str, tuple[list[str], int]] = {
     "sync": (["scripts/sync_remote_project.sh"], 240),
     "setup": (["scripts/setup_remote_backend.sh"], 900),
     "configure_database": (["scripts/configure_remote_database.sh"], 240),
+    "apply_schema": (["scripts/apply_remote_schema.sh"], 300),
     "api_start": (["scripts/remote_api.sh", "start"], 180),
     "api_status": (["scripts/remote_api.sh", "status"], 120),
     "api_stop": (["scripts/remote_api.sh", "stop"], 120),
@@ -27,7 +28,7 @@ REMOTE_ACTIONS: dict[str, tuple[list[str], int]] = {
 
 SSH_MANAGEMENT_MESSAGE = (
     "SSH 管理未配置。运行时数据库连接使用 DATABASE_URL，"
-    "远端推理使用 INFERENCE_ENDPOINT；SSH 只用于远端检测、同步、安装、配库和启动 API。"
+    "远端推理使用 INFERENCE_ENDPOINT；SSH 只用于远端检测、同步、安装、配库、应用 schema 和启动 API。"
 )
 
 
@@ -97,6 +98,7 @@ def _remote_env(settings: Settings, request: RemoteActionRequest | None) -> dict
             "REMOTE_KEY": str(Path(settings.remote_ssh_key_path).expanduser()),
             "REMOTE_API_HOST": settings.remote_api_host,
             "REMOTE_API_PORT": str(settings.remote_api_port),
+            "DATABASE_URL": settings.database_url,
             "REMOTE_PIP_INDEX_URLS": settings.remote_pip_index_urls,
             "REMOTE_PIP_TRUSTED_HOSTS": settings.remote_pip_trusted_hosts,
             "REMOTE_PIP_PROXY": settings.remote_pip_proxy,
@@ -110,6 +112,9 @@ def _remote_env(settings: Settings, request: RemoteActionRequest | None) -> dict
 
 
 def _validate_ssh_management(action: str, settings: Settings) -> dict[str, Any] | None:
+    if action == "apply_schema" and settings.database_url.strip():
+        return None
+
     missing: list[str] = []
     if not settings.remote_ssh_host.strip():
         missing.append("REMOTE_SSH_HOST")

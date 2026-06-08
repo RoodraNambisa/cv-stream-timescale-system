@@ -107,6 +107,7 @@ export type RemoteAction =
   | 'sync'
   | 'setup'
   | 'configure_database'
+  | 'apply_schema'
   | 'api_start'
   | 'api_status'
   | 'api_stop'

@@ -355,13 +355,14 @@ POST /api/remote/check
 POST /api/remote/sync
 POST /api/remote/setup
 POST /api/remote/configure_database
+POST /api/remote/apply_schema
 POST /api/remote/api_start
 POST /api/remote/api_status
 POST /api/remote/api_stop
 POST /api/remote/api_logs
 ```
 
-这些接口只允许调用仓库内白名单脚本。连接服务器靠可选的 `REMOTE_SSH_*` 配置和 SSH 私钥；安装依赖会进入服务器持久目录，使用现有 conda 环境，不全局安装本地依赖。`configure_database` 是远端管理动作，负责初始化数据库用户和远端配置；检测结果写库仍然由后端按 `DATABASE_URL` 发起 PostgreSQL 连接。未配置 SSH 时，这些管理按钮会返回缺少 SSH 配置，不影响直连数据库和直连推理 API。
+这些接口只允许调用仓库内白名单脚本。连接服务器靠可选的 `REMOTE_SSH_*` 配置和 SSH 私钥；安装依赖会进入服务器持久目录，使用现有 conda 环境，不全局安装本地依赖。`configure_database` 负责初始化数据库用户和远端配置；`apply_schema` 在 `DATABASE_URL` 有值时直接应用 schema，没写连接串时回退到 SSH 路径。检测结果写库仍然由后端按 `DATABASE_URL` 发起 PostgreSQL 连接。未配置 SSH 时，SSH 管理按钮会返回缺少 SSH 配置，不影响直连数据库和直连推理 API。
 
 本地采集、远端推理、远端数据库直连时，本地 `.env` 可以这样组合：
 
