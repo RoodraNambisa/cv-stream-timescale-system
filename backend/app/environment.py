@@ -340,6 +340,10 @@ def config_summary(settings: Settings) -> dict[str, Any]:
             "ssh_port": settings.remote_ssh_port,
             "ssh_user": settings.remote_ssh_user,
             "ssh_key_path": settings.remote_ssh_key_path,
+            "pip_index_urls": settings.remote_pip_index_urls,
+            "pip_trusted_hosts": settings.remote_pip_trusted_hosts,
+            "pip_proxy_configured": bool(settings.remote_pip_proxy),
+            "pip_proxy_url": mask_url(settings.remote_pip_proxy),
         },
         "observability": {
             "grafana_configured": bool(settings.grafana_base_url),

@@ -97,6 +97,9 @@ def _remote_env(settings: Settings, request: RemoteActionRequest | None) -> dict
             "REMOTE_KEY": str(Path(settings.remote_ssh_key_path).expanduser()),
             "REMOTE_API_HOST": settings.remote_api_host,
             "REMOTE_API_PORT": str(settings.remote_api_port),
+            "REMOTE_PIP_INDEX_URLS": settings.remote_pip_index_urls,
+            "REMOTE_PIP_TRUSTED_HOSTS": settings.remote_pip_trusted_hosts,
+            "REMOTE_PIP_PROXY": settings.remote_pip_proxy,
         }
     )
 

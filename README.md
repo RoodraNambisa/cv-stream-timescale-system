@@ -210,7 +210,7 @@ cp .env.example .env
 - `GRAFANA_BASE_URL`：可选 Grafana 地址，环境检测会访问 `/api/health`
 - `GRAFANA_DASHBOARD_URL`：可选 Grafana 面板地址，前端配置页会保留该链接
 
-前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`REMOTE_API_BASE_URL` 是本地或前端可访问的远端 API 直连入口，环境检测会访问它的 `/api/health`。`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制服务器上 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测服务器、同步项目、安装依赖、配库、启动或停止远端 API。
+前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`REMOTE_API_BASE_URL` 是本地或前端可访问的远端 API 直连入口，环境检测会访问它的 `/api/health`。`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制服务器上 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测服务器、同步项目、安装依赖、配库、启动或停止远端 API。`REMOTE_PIP_INDEX_URLS`、`REMOTE_PIP_TRUSTED_HOSTS` 和 `REMOTE_PIP_PROXY` 只影响远端依赖安装。
 
 Grafana 是可选观测入口。React 分析页已经能展示类别分布、时间桶和统计元数据；如果你部署了 Grafana，可以让它直接读取同一个 PostgreSQL/TimescaleDB，再把 `GRAFANA_BASE_URL` 和 `GRAFANA_DASHBOARD_URL` 写入配置，环境检测会显示 Grafana 是否可达。
 
@@ -266,6 +266,15 @@ scripts/sync_remote_project.sh
 安装远端 API 依赖到服务器现有 conda：
 
 ```bash
+scripts/setup_remote_backend.sh
+```
+
+远端 pip 连接慢或被限制时，可以临时指定镜像源、trusted-host 或代理：
+
+```bash
+REMOTE_PIP_INDEX_URLS="https://pypi.tuna.tsinghua.edu.cn/simple https://pypi.org/simple" \
+REMOTE_PIP_TRUSTED_HOSTS="pypi.tuna.tsinghua.edu.cn" \
+REMOTE_PIP_PROXY="http://127.0.0.1:7890" \
 scripts/setup_remote_backend.sh
 ```
 

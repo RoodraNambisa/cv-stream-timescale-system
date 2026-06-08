@@ -9,6 +9,9 @@ REMOTE_PYTHON="${REMOTE_PYTHON:-python3}"
 REMOTE_API_HOST="${REMOTE_API_HOST:-127.0.0.1}"
 REMOTE_API_PORT="${REMOTE_API_PORT:-8000}"
 REMOTE_CONNECT_TIMEOUT="${REMOTE_CONNECT_TIMEOUT:-8}"
+REMOTE_PIP_INDEX_URLS="${REMOTE_PIP_INDEX_URLS:-https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.aliyun.com/pypi/simple https://pypi.mirrors.ustc.edu.cn/simple https://pypi.org/simple}"
+REMOTE_PIP_TRUSTED_HOSTS="${REMOTE_PIP_TRUSTED_HOSTS:-}"
+REMOTE_PIP_PROXY="${REMOTE_PIP_PROXY:-}"
 
 SSH_ARGS=(
   -i "$REMOTE_KEY"

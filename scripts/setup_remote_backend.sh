@@ -5,10 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=remote_common.sh
 . "$ROOT_DIR/scripts/remote_common.sh"
 
-REMOTE_PIP_INDEX_URLS="${REMOTE_PIP_INDEX_URLS:-https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.aliyun.com/pypi/simple https://pypi.mirrors.ustc.edu.cn/simple https://pypi.org/simple}"
-
 ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" \
-  "REMOTE_PROJECT_DIR='$REMOTE_PROJECT_DIR' REMOTE_PYTHON='$REMOTE_PYTHON' REMOTE_PIP_INDEX_URLS='$REMOTE_PIP_INDEX_URLS' bash -s" <<'REMOTE_SCRIPT'
+  "REMOTE_PROJECT_DIR='$REMOTE_PROJECT_DIR' REMOTE_PYTHON='$REMOTE_PYTHON' REMOTE_PIP_INDEX_URLS='$REMOTE_PIP_INDEX_URLS' REMOTE_PIP_TRUSTED_HOSTS='$REMOTE_PIP_TRUSTED_HOSTS' REMOTE_PIP_PROXY='$REMOTE_PIP_PROXY' bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 
 cd "$REMOTE_PROJECT_DIR"
@@ -32,20 +30,28 @@ PY
 
 if [ -n "$missing_packages" ]; then
   installed=0
+  pip_args=(
+    --disable-pip-version-check
+    --timeout 20
+    --retries 1
+  )
+  if [ -n "${REMOTE_PIP_PROXY:-}" ]; then
+    pip_args+=(--proxy "$REMOTE_PIP_PROXY")
+  fi
+  for trusted_host in ${REMOTE_PIP_TRUSTED_HOSTS:-}; do
+    pip_args+=(--trusted-host "$trusted_host")
+  done
+
   for index_url in $REMOTE_PIP_INDEX_URLS; do
     echo "trying pip index: $index_url"
     if command -v timeout >/dev/null 2>&1; then
       timeout 180 "$REMOTE_PYTHON" -m pip install \
-        --disable-pip-version-check \
-        --timeout 20 \
-        --retries 1 \
+        "${pip_args[@]}" \
         -i "$index_url" \
         $missing_packages && installed=1 && break
     else
       "$REMOTE_PYTHON" -m pip install \
-        --disable-pip-version-check \
-        --timeout 20 \
-        --retries 1 \
+        "${pip_args[@]}" \
         -i "$index_url" \
         $missing_packages && installed=1 && break
     fi

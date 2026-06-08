@@ -43,6 +43,9 @@ EDITABLE_ENV_KEYS = {
     "REMOTE_SSH_PORT",
     "REMOTE_SSH_USER",
     "REMOTE_SSH_KEY_PATH",
+    "REMOTE_PIP_INDEX_URLS",
+    "REMOTE_PIP_TRUSTED_HOSTS",
+    "REMOTE_PIP_PROXY",
     "GRAFANA_BASE_URL",
     "GRAFANA_DASHBOARD_URL",
 }
@@ -103,6 +106,9 @@ class Settings(BaseSettings):
     remote_ssh_port: int = 22
     remote_ssh_user: str = ""
     remote_ssh_key_path: str = ""
+    remote_pip_index_urls: str = "https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.aliyun.com/pypi/simple https://pypi.mirrors.ustc.edu.cn/simple https://pypi.org/simple"
+    remote_pip_trusted_hosts: str = ""
+    remote_pip_proxy: str = ""
 
     grafana_base_url: str = ""
     grafana_dashboard_url: str = ""

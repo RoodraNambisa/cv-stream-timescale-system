@@ -60,6 +60,9 @@ ENV_KEYS = {
     "REMOTE_SSH_PORT",
     "REMOTE_SSH_USER",
     "REMOTE_SSH_KEY_PATH",
+    "REMOTE_PIP_INDEX_URLS",
+    "REMOTE_PIP_TRUSTED_HOSTS",
+    "REMOTE_PIP_PROXY",
     "GRAFANA_BASE_URL",
     "GRAFANA_DASHBOARD_URL",
 }
@@ -202,6 +205,9 @@ async def main() -> None:
                 "DATABASE_BATCH_SIZE=5",
                 "DATABASE_FLUSH_INTERVAL_MS=10000",
                 f"SPOOL_SQLITE_PATH={spool_path}",
+                "REMOTE_PIP_INDEX_URLS=https://pypi.tuna.tsinghua.edu.cn/simple https://pypi.org/simple",
+                "REMOTE_PIP_TRUSTED_HOSTS=pypi.tuna.tsinghua.edu.cn",
+                "REMOTE_PIP_PROXY=",
                 f"GRAFANA_BASE_URL={optional_base_url}",
                 f"GRAFANA_DASHBOARD_URL={optional_base_url}/d/api-smoke",
             ]
@@ -236,6 +242,8 @@ async def main() -> None:
             assert config["database"]["configured"] is False, config
             assert config["stream"]["receiver_kind"] == "mediamtx", config
             assert config["observability"]["grafana_configured"] is True, config
+            assert "pypi.tuna.tsinghua.edu.cn" in config["remote"]["pip_index_urls"], config
+            assert config["remote"]["pip_proxy_configured"] is False, config
 
             environment = assert_status(await client.get("/api/environment"), 200)
             checks = {item["name"]: item for item in environment["checks"]}

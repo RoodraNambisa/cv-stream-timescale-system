@@ -205,6 +205,9 @@ const configGroups: ConfigGroup[] = [
       { key: 'REMOTE_SSH_PORT', label: 'SSH 管理端口', input: 'number' },
       { key: 'REMOTE_SSH_USER', label: 'SSH 管理用户', input: 'text', placeholder: '可选…' },
       { key: 'REMOTE_SSH_KEY_PATH', label: 'SSH 私钥路径', input: 'text', placeholder: '可选…' },
+      { key: 'REMOTE_PIP_INDEX_URLS', label: 'pip 镜像源列表', input: 'text', placeholder: '空格分隔多个 simple URL…' },
+      { key: 'REMOTE_PIP_TRUSTED_HOSTS', label: 'pip trusted-host', input: 'text', placeholder: '空格分隔多个 host…' },
+      { key: 'REMOTE_PIP_PROXY', label: 'pip 代理 URL', input: 'password', sensitive: true, placeholder: '留空保留当前代理…' },
     ],
   },
   {
@@ -1318,6 +1321,9 @@ function buildConfigDraft(
     REMOTE_SSH_PORT: stringValue(remote.ssh_port, '22'),
     REMOTE_SSH_USER: stringValue(remote.ssh_user),
     REMOTE_SSH_KEY_PATH: stringValue(remote.ssh_key_path),
+    REMOTE_PIP_INDEX_URLS: stringValue(remote.pip_index_urls),
+    REMOTE_PIP_TRUSTED_HOSTS: stringValue(remote.pip_trusted_hosts),
+    REMOTE_PIP_PROXY: '',
     GRAFANA_BASE_URL: stringValue(observability.grafana_base_url),
     GRAFANA_DASHBOARD_URL: stringValue(observability.grafana_dashboard_url),
   }
@@ -1443,6 +1449,10 @@ function placeholderForField(field: ConfigField, config?: Record<string, unknown
 
   if (field.key === 'STREAM_PASSWORD') {
     return pickObject(config, 'stream').password_set ? '已设置，留空保留…' : '未设置…'
+  }
+
+  if (field.key === 'REMOTE_PIP_PROXY') {
+    return pickObject(config, 'remote').pip_proxy_configured ? '已设置，留空保留…' : field.placeholder ?? ''
   }
 
   return field.placeholder ?? ''

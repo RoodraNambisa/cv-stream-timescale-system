@@ -160,6 +160,7 @@ check_frontend_assets() {
   grep -q "分析" apps/web/src/App.tsx || fail "frontend missing analysis tab"
   grep -q "STREAM_RECEIVER_KIND" apps/web/src/App.tsx || fail "frontend missing stream receiver config"
   grep -q "GRAFANA_BASE_URL" apps/web/src/App.tsx || fail "frontend missing Grafana config"
+  grep -q "REMOTE_PIP_INDEX_URLS" apps/web/src/App.tsx || fail "frontend missing remote pip config"
   grep -q "检测当前配置" apps/web/src/App.tsx || fail "frontend missing config probe action"
   grep -q "aria-live" apps/web/src/App.tsx || fail "frontend missing live regions"
   grep -q "prefers-reduced-motion" apps/web/src/App.css || fail "frontend missing reduced-motion handling"
@@ -184,6 +185,10 @@ check_backend_assets() {
   grep -q "GRAFANA_BASE_URL" backend/app/config.py || fail "backend missing Grafana config"
   grep -q "check_stream_receiver" backend/app/environment.py || fail "backend missing stream receiver check"
   grep -q "check_grafana" backend/app/environment.py || fail "backend missing Grafana check"
+  grep -q "remote_pip_index_urls" backend/app/config.py || fail "backend missing remote pip config"
+  grep -q "REMOTE_PIP_PROXY" backend/app/remote_ops.py || fail "remote action missing pip proxy propagation"
+  grep -q "REMOTE_PIP_PROXY" scripts/setup_remote_backend.sh || fail "remote setup missing pip proxy support"
+  grep -q "REMOTE_PIP_INDEX_URLS" .env.example || fail "env example missing remote pip indexes"
 }
 
 check_deploy_assets() {
