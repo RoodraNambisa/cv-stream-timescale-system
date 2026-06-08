@@ -100,6 +100,7 @@ POST /api/spool/flush
 ```
 
 检测结果先进入内存队列，再写入 SQLite spool。内存队列只负责当前进程内的快速缓冲；SQLite spool 是落盘队列，进程重启、数据库断开或网络抖动时仍能保留待写记录。数据库恢复后，flush 会按批量配置写入 `cv_detection_stream` 超表。
+flush 写检测流之前会按检测记录里的 `device_id` 和 `task_id` 自动 upsert `device` 与 `cv_task`，避免新设备或新任务因为外键缺失而写入失败。
 
 采集任务接口：
 

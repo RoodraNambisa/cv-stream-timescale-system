@@ -134,6 +134,7 @@ class DetectionSpool:
             }
 
         try:
+            await self._ensure_metadata(connection, settings, rows)
             await connection.executemany(
                 """
                 INSERT INTO cv_detection_stream (
@@ -262,6 +263,102 @@ class DetectionSpool:
 
     def _parse_datetime(self, value: str) -> datetime:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+    async def _ensure_metadata(
+        self,
+        connection: asyncpg.Connection,
+        settings: Settings,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        devices: dict[int, str] = {}
+        tasks: dict[int, tuple[int, str]] = {}
+        for row in rows:
+            values = row["values"]
+            device_id = int(values[1])
+            task_id = int(values[2])
+            source_kind = str(values[12])
+            devices.setdefault(device_id, source_kind)
+            tasks.setdefault(task_id, (device_id, source_kind))
+
+        for device_id, source_kind in devices.items():
+            urls = self._device_stream_urls(settings, source_kind)
+            await connection.execute(
+                """
+                INSERT INTO device (
+                  id,
+                  device_name,
+                  owner,
+                  stream_protocol,
+                  http_mjpeg_url,
+                  rtsp_url,
+                  rtmp_url
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (id) DO UPDATE SET
+                  stream_protocol = EXCLUDED.stream_protocol,
+                  http_mjpeg_url = EXCLUDED.http_mjpeg_url,
+                  rtsp_url = EXCLUDED.rtsp_url,
+                  rtmp_url = EXCLUDED.rtmp_url
+                """,
+                device_id,
+                f"Device {device_id}",
+                "runtime",
+                source_kind,
+                urls["http_mjpeg_url"],
+                urls["rtsp_url"],
+                urls["rtmp_url"],
+            )
+
+        for task_id, (device_id, source_kind) in tasks.items():
+            await connection.execute(
+                """
+                INSERT INTO cv_task (
+                  task_id,
+                  device_id,
+                  task_name,
+                  model_name,
+                  confidence_threshold,
+                  frame_interval,
+                  source_kind,
+                  source_url,
+                  inference_endpoint,
+                  status,
+                  start_time
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'running', now())
+                ON CONFLICT (task_id) DO UPDATE SET
+                  device_id = EXCLUDED.device_id,
+                  model_name = EXCLUDED.model_name,
+                  confidence_threshold = EXCLUDED.confidence_threshold,
+                  frame_interval = EXCLUDED.frame_interval,
+                  source_kind = EXCLUDED.source_kind,
+                  source_url = EXCLUDED.source_url,
+                  inference_endpoint = EXCLUDED.inference_endpoint,
+                  status = EXCLUDED.status,
+                  start_time = COALESCE(cv_task.start_time, EXCLUDED.start_time)
+                """,
+                task_id,
+                device_id,
+                f"Task {task_id}",
+                settings.inference_model,
+                settings.confidence_threshold,
+                settings.frame_interval,
+                source_kind,
+                settings.capture_source_url or None,
+                settings.inference_endpoint or None,
+            )
+
+    def _device_stream_urls(self, settings: Settings, source_kind: str) -> dict[str, str | None]:
+        urls = {
+            "http_mjpeg_url": None,
+            "rtsp_url": None,
+            "rtmp_url": None,
+        }
+        if source_kind == "http_mjpeg":
+            urls["http_mjpeg_url"] = settings.capture_source_url or None
+        elif source_kind == "rtsp":
+            urls["rtsp_url"] = settings.capture_source_url or None
+        elif source_kind == "rtmp":
+            urls["rtmp_url"] = settings.capture_source_url or None
+        return urls
 
     async def _mark_synced(self, settings: Settings, row_ids: list[int]) -> None:
         if not row_ids:

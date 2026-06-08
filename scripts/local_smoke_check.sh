@@ -22,6 +22,7 @@ import numpy as np
 from backend.app.analysis import analysis_summary
 from backend.app.environment import check_remote_api
 import backend.app.capture as capture_module
+import backend.app.spool as spool_module
 from backend.app.capture import CaptureManager, CaptureStartRequest, _detections_to_records
 from backend.app.config import Settings
 from backend.app.inference import _filter_inference_payload
@@ -92,14 +93,33 @@ class HealthHandler(BaseHTTPRequestHandler):
         return
 
 
+class FakePgConnection:
+    def __init__(self):
+        self.calls = []
+        self.closed = False
+
+    async def execute(self, sql, *args):
+        self.calls.append(("execute", sql, args))
+        return "OK"
+
+    async def executemany(self, sql, args):
+        self.calls.append(("executemany", sql, args))
+
+    async def close(self):
+        self.closed = True
+
+
 async def main() -> None:
     spool_path = Path("runtime/local_smoke_spool.db")
     alternate_spool_path = Path("runtime/local_smoke_spool_alt.db")
+    fake_db_spool_path = Path("runtime/local_smoke_fake_db_spool.db")
     video_path = Path("runtime/local_smoke_video.avi")
     if spool_path.exists():
         spool_path.unlink()
     if alternate_spool_path.exists():
         alternate_spool_path.unlink()
+    if fake_db_spool_path.exists():
+        fake_db_spool_path.unlink()
     if video_path.exists():
         video_path.unlink()
     write_test_video(video_path)
@@ -181,6 +201,38 @@ async def main() -> None:
         finally:
             server.shutdown()
             thread.join(timeout=2)
+
+        fake_connection = FakePgConnection()
+
+        async def fake_connect(*args, **kwargs):
+            return fake_connection
+
+        original_connect = spool_module.asyncpg.connect
+        spool_module.asyncpg.connect = fake_connect
+        fake_db_spool = DetectionSpool()
+        fake_db_settings = settings.model_copy(
+            update={
+                "database_url": "postgresql://cv_user:password@127.0.0.1:5432/cv_stream",
+                "spool_sqlite_path": fake_db_spool_path,
+                "capture_source_kind": "rtsp",
+                "capture_source_url": "rtsp://127.0.0.1:8554/live/camera-1",
+                "frame_interval": 5,
+            }
+        )
+        try:
+            fake_row_ids = await fake_db_spool.enqueue(records, fake_db_settings)
+            assert len(fake_row_ids) == 1, fake_row_ids
+            fake_flush = await fake_db_spool.flush(fake_db_settings)
+            assert fake_flush["status"] == "ok", fake_flush
+            assert fake_connection.closed is True, fake_connection.calls
+            call_sql = [call[1] for call in fake_connection.calls]
+            assert "INSERT INTO device" in call_sql[0], call_sql
+            assert "INSERT INTO cv_task" in call_sql[1], call_sql
+            assert "INSERT INTO cv_detection_stream" in call_sql[2], call_sql
+            fake_db_status = await fake_db_spool.status(fake_db_settings)
+            assert fake_db_status["counts"]["synced"] == 1, fake_db_status
+        finally:
+            spool_module.asyncpg.connect = original_connect
 
         alternate_settings = settings.model_copy(update={"spool_sqlite_path": alternate_spool_path})
         alternate_row_ids = await spool.enqueue(records, alternate_settings)
