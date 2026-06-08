@@ -786,7 +786,7 @@ function ConfigPage({
               <div className="action-row">
                 <button type="button" onClick={onProbe} disabled={probePending}>
                   <Play size={17} aria-hidden="true" />
-                  探测视频源
+                  检测视频配置
                 </button>
                 {probeResult && (
                   <span className="action-result">{String(probeResult.message ?? probeResult.status)}</span>

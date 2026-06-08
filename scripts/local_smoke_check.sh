@@ -22,6 +22,7 @@ from backend.app.capture import CaptureManager, CaptureStartRequest, _detections
 from backend.app.config import Settings
 from backend.app.inference import _filter_inference_payload
 from backend.app.spool import DetectionSpool
+from backend.app.video import probe_video_source
 
 
 def write_test_video(path: Path) -> None:
@@ -121,6 +122,26 @@ async def main() -> None:
         assert len(alternate_row_ids) == 1, alternate_row_ids
         alternate_status = await spool.status(alternate_settings)
         assert alternate_status["counts"]["pending"] == 1, alternate_status
+
+        push_settings = settings.model_copy(
+            update={
+                "stream_mode": "push",
+                "stream_protocol": "rtmp",
+                "stream_push_url": "rtmp://127.0.0.1/live/camera-1",
+                "stream_username": "publisher",
+                "stream_password": "secret",
+                "capture_source_kind": "rtmp",
+                "capture_source_url": "rtmp://127.0.0.1/live/camera-1",
+            }
+        )
+        push_probe = await probe_video_source(push_settings)
+        assert push_probe["status"] == "ok", push_probe
+        assert push_probe["details"]["stream_username_set"] is True, push_probe
+        assert push_probe["details"]["stream_password_set"] is True, push_probe
+
+        push_without_read_source = push_settings.model_copy(update={"capture_source_url": ""})
+        push_warning = await probe_video_source(push_without_read_source)
+        assert push_warning["status"] == "warn", push_warning
 
         capture_module.get_settings = lambda: settings
         capture_module.infer_image_bytes = fake_infer_image_bytes

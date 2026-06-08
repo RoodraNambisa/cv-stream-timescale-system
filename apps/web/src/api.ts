@@ -28,6 +28,7 @@ export type SpoolStatus = {
 export type VideoConfig = {
   capture: Record<string, unknown>
   stream: Record<string, unknown>
+  supported_stream_modes: string[]
   supported_inputs: string[]
   supported_push_protocols: string[]
 }

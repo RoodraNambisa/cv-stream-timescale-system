@@ -132,7 +132,7 @@ POST /api/video/probe
 http://手机IP:8080/video
 ```
 
-如果手机使用推流，配置 `STREAM_MODE=push`、`STREAM_PROTOCOL=rtmp` 或 `rtsp`，并填写 `STREAM_PUSH_URL`、账号和密码。后续可用 MediaMTX 接收 RTMP/RTSP 推流。
+如果手机使用推流，配置 `STREAM_MODE=push`、`STREAM_PROTOCOL=rtmp` 或 `rtsp`，并填写 `STREAM_PUSH_URL`、账号和密码。MediaMTX 或 nginx-rtmp 可以接收 RTMP/RTSP 推流。`STREAM_PUSH_URL` 是手机发布视频的入口；`CAPTURE_SOURCE_URL` 是后端读取视频的播放地址。接收服务把发布和播放做成同一个地址时，两项可以填同一个 URL。
 
 推理接口：
 
