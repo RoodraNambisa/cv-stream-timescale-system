@@ -229,6 +229,11 @@ async def main() -> None:
             assert "INSERT INTO device" in call_sql[0], call_sql
             assert "INSERT INTO cv_task" in call_sql[1], call_sql
             assert "INSERT INTO cv_detection_stream" in call_sql[2], call_sql
+            assert "INSERT INTO cv_result_meta" in call_sql[3], call_sql
+            result_meta_values = fake_connection.calls[3][2]
+            assert result_meta_values[0][1] == "person", result_meta_values
+            assert result_meta_values[0][2] == 0.82, result_meta_values
+            assert result_meta_values[0][3] == 1, result_meta_values
             fake_db_status = await fake_db_spool.status(fake_db_settings)
             assert fake_db_status["counts"]["synced"] == 1, fake_db_status
         finally:

@@ -4,6 +4,7 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
+from statistics import fmean
 from typing import Any
 
 import aiosqlite
@@ -159,6 +160,7 @@ class DetectionSpool:
                 """,
                 [row["values"] for row in rows],
             )
+            await self._upsert_result_meta(connection, rows)
         except Exception as exc:
             await connection.close()
             await self._mark_failed(settings, [row["id"] for row in rows], str(exc))
@@ -359,6 +361,49 @@ class DetectionSpool:
         elif source_kind == "rtmp":
             urls["rtmp_url"] = settings.capture_source_url or None
         return urls
+
+    async def _upsert_result_meta(
+        self,
+        connection: asyncpg.Connection,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        groups: dict[tuple[int, str, datetime], list[float]] = {}
+        for row in rows:
+            values = row["values"]
+            observed_at = values[0].replace(second=0, microsecond=0)
+            task_id = int(values[2])
+            object_class = str(values[3])
+            confidence = float(values[4])
+            groups.setdefault((task_id, object_class, observed_at), []).append(confidence)
+
+        if not groups:
+            return
+
+        values = [
+            (task_id, object_class, fmean(confidences), len(confidences), stat_time, 60)
+            for (task_id, object_class, stat_time), confidences in groups.items()
+        ]
+
+        await connection.executemany(
+            """
+            INSERT INTO cv_result_meta (
+              task_id,
+              object_class,
+              avg_confidence,
+              total_count,
+              stat_time,
+              stat_window_seconds
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (task_id, object_class, stat_time, stat_window_seconds)
+            DO UPDATE SET
+              avg_confidence = (
+                (cv_result_meta.avg_confidence * cv_result_meta.total_count)
+                + (EXCLUDED.avg_confidence * EXCLUDED.total_count)
+              ) / (cv_result_meta.total_count + EXCLUDED.total_count),
+              total_count = cv_result_meta.total_count + EXCLUDED.total_count
+            """,
+            values,
+        )
 
     async def _mark_synced(self, settings: Settings, row_ids: list[int]) -> None:
         if not row_ids:
