@@ -191,6 +191,7 @@ check_backend_assets() {
   grep -q "REMOTE_PIP_PROXY" backend/app/remote_ops.py || fail "remote action missing pip proxy propagation"
   grep -q "REMOTE_PIP_PROXY" scripts/setup_remote_backend.sh || fail "remote setup missing pip proxy support"
   grep -q "REMOTE_PIP_INDEX_URLS" .env.example || fail "env example missing remote pip indexes"
+  grep -q 'psql -v ON_ERROR_STOP=1 "$DATABASE_URL"' scripts/apply_remote_schema.sh || fail "schema script missing direct database path"
 }
 
 check_deploy_assets() {

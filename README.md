@@ -316,6 +316,13 @@ runtime/remote_database.env
 scripts/apply_remote_schema.sh
 ```
 
+如果数据库可以直连，优先用连接串应用 schema：
+
+```bash
+DATABASE_URL='postgresql://cv_user:密码@数据库主机:5432/cv_stream' \
+scripts/apply_remote_schema.sh
+```
+
 启动远端 API：
 
 ```bash
