@@ -157,10 +157,14 @@ cp .env.example .env
 - `CAPTURE_SOURCE_URL`：视频源地址
 - `STREAM_MODE`：`pull` 或 `push`
 - `INFERENCE_ENDPOINT`：留空时本地推理，填写后走远端推理
+- `DETECTION_CLASS_FILTER`：逗号分隔的类别白名单，留空表示不过滤
+- `ANALYSIS_TIME_RANGE_MINUTES`：分析页图表和查询的默认时间窗口
 - `DATABASE_URL`：本地或远端 PostgreSQL/TimescaleDB
 - `SPOOL_SQLITE_PATH`：SQLite 缓存路径
 
 前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`REMOTE_API_BASE_URL` 是本地或前端可访问的远端 API 直连入口，`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制服务器上 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测服务器、同步项目、安装依赖、配库、启动或停止远端 API。
+
+采集运行中仍可热重载 `CONFIDENCE_THRESHOLD`、`FRAME_INTERVAL`、`CAPTURE_FPS_LIMIT`、`DETECTION_CLASS_FILTER`、`ANALYSIS_TIME_RANGE_MINUTES`、`DATABASE_BATCH_SIZE` 和 `DATABASE_FLUSH_INTERVAL_MS`。系统会继续使用启动时的视频源、推理端点、模型、数据库 URL 和 spool 路径。
 
 运行时写库只看 `DATABASE_URL`，后端通过 PostgreSQL 协议直接连接本地或远端数据库。SSH 配库只负责创建用户、启动服务、应用 schema、写服务器 `.env`，不参与正常检测数据写入。只有在平台允许端口转发且数据库无法直连时，才把 SSH 隧道当作临时诊断方案。
 

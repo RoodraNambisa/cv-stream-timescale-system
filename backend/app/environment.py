@@ -199,6 +199,10 @@ def config_summary(settings: Settings) -> dict[str, Any]:
             "model": settings.inference_model,
             "confidence_threshold": settings.confidence_threshold,
             "frame_interval": settings.frame_interval,
+            "class_filter": settings.detection_class_filter,
+        },
+        "analysis": {
+            "time_range_minutes": settings.analysis_time_range_minutes,
         },
         "database": {
             "configured": bool(settings.database_url),

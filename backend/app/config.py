@@ -27,6 +27,8 @@ EDITABLE_ENV_KEYS = {
     "INFERENCE_MODEL",
     "CONFIDENCE_THRESHOLD",
     "FRAME_INTERVAL",
+    "DETECTION_CLASS_FILTER",
+    "ANALYSIS_TIME_RANGE_MINUTES",
     "DATABASE_URL",
     "DATABASE_CONNECT_TIMEOUT",
     "DATABASE_BATCH_SIZE",
@@ -77,6 +79,8 @@ class Settings(BaseSettings):
     inference_model: str = "yolov8n.pt"
     confidence_threshold: float = 0.5
     frame_interval: int = 10
+    detection_class_filter: str = ""
+    analysis_time_range_minutes: int = Field(default=30, ge=1)
 
     database_url: str = ""
     database_connect_timeout: int = 5
@@ -137,6 +141,14 @@ def get_settings() -> Settings:
 def reload_settings() -> Settings:
     get_settings.cache_clear()
     return get_settings()
+
+
+def parse_detection_class_filter(value: str) -> set[str]:
+    return {
+        item.strip().casefold()
+        for item in re.split(r"[,;，、\n]+", value or "")
+        if item.strip()
+    }
 
 
 def _normalize_update_values(values: dict[str, Any]) -> dict[str, Any]:

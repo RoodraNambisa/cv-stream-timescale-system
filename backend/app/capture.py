@@ -9,6 +9,7 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from .config import Settings, get_settings
+from .config import parse_detection_class_filter
 from .detections import DetectionRecord, utc_now
 from .inference import infer_image_bytes
 from .spool import DetectionSpool
@@ -176,15 +177,18 @@ class CaptureManager:
             await asyncio.to_thread(capture.release)
             return
 
-        frame_interval = max(request.frame_interval or settings.frame_interval, 1)
-        fps_sleep_seconds = 0.0
-        if settings.capture_fps_limit > 0:
-            fps_sleep_seconds = 1 / settings.capture_fps_limit
-
         consecutive_read_failures = 0
 
         try:
             while not stop_event.is_set():
+                runtime_settings = get_settings()
+                frame_interval = max(request.frame_interval or runtime_settings.frame_interval, 1)
+                fps_sleep_seconds = (
+                    1 / runtime_settings.capture_fps_limit
+                    if runtime_settings.capture_fps_limit > 0
+                    else 0.0
+                )
+
                 if request.max_frames is not None and self._state.frames_read >= request.max_frames:
                     await self._update_state(message="已达到本次采集帧数上限")
                     break
@@ -192,7 +196,7 @@ class CaptureManager:
                 ok, frame = await asyncio.to_thread(capture.read)
                 if not ok or frame is None:
                     consecutive_read_failures += 1
-                    if settings.capture_source_kind == "file":
+                    if runtime_settings.capture_source_kind == "file":
                         await self._update_state(message="视频文件读取结束")
                         break
                     if consecutive_read_failures >= 25:
@@ -210,7 +214,7 @@ class CaptureManager:
                 frame_index = await self._bump_frame_read()
 
                 if frame_index % frame_interval == 0:
-                    await self._infer_and_enqueue(settings, request, frame, frame_index)
+                    await self._infer_and_enqueue(runtime_settings, request, frame, frame_index)
 
                 if fps_sleep_seconds > 0:
                     await asyncio.sleep(fps_sleep_seconds)
@@ -353,6 +357,7 @@ def _detections_to_records(
 
     observed_at = utc_now()
     records: list[DetectionRecord] = []
+    allowed_classes = parse_detection_class_filter(settings.detection_class_filter)
 
     for detection in detections:
         if not isinstance(detection, dict):
@@ -369,12 +374,16 @@ def _detections_to_records(
             or detection.get("class")
             or "unknown"
         )
+        object_class_text = str(object_class)
+        if allowed_classes and object_class_text.strip().casefold() not in allowed_classes:
+            continue
+
         records.append(
             DetectionRecord(
                 time=observed_at,
                 device_id=request.device_id or settings.capture_device_id,
                 task_id=request.task_id or settings.capture_task_id,
-                object_class=str(object_class),
+                object_class=object_class_text,
                 confidence=confidence,
                 bbox_x1=_float_or_none(detection.get("bbox_x1")),
                 bbox_y1=_float_or_none(detection.get("bbox_y1")),

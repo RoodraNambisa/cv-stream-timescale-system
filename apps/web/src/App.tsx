@@ -157,6 +157,16 @@ const configGroups: ConfigGroup[] = [
       { key: 'INFERENCE_MODEL', label: '模型文件', input: 'text' },
       { key: 'CONFIDENCE_THRESHOLD', label: '置信度阈值', input: 'number' },
       { key: 'FRAME_INTERVAL', label: '推理帧间隔', input: 'number' },
+      { key: 'DETECTION_CLASS_FILTER', label: '类别过滤', input: 'text', placeholder: 'person, car, bicycle' },
+    ],
+  },
+  {
+    eyebrow: 'Analysis',
+    title: '分析视图',
+    icon: BarChart3,
+    accent: 'accent-analysis',
+    fields: [
+      { key: 'ANALYSIS_TIME_RANGE_MINUTES', label: '图表时间范围分钟', input: 'number' },
     ],
   },
   {
@@ -415,7 +425,11 @@ function App() {
       )}
 
       {activeTab === 'analysis' && (
-        <AnalysisPage summaryChart={summaryChart} spoolChart={spoolChart} />
+        <AnalysisPage
+          config={environment.data?.config}
+          summaryChart={summaryChart}
+          spoolChart={spoolChart}
+        />
       )}
     </main>
   )
@@ -900,16 +914,27 @@ function TasksPage({
 }
 
 function AnalysisPage({
+  config,
   summaryChart,
   spoolChart,
 }: {
+  config?: Record<string, unknown>
   summaryChart: Array<{ name: CheckStatus; value: number }>
   spoolChart: Array<{ name: string; value: number }>
 }) {
+  const inference = pickObject(config, 'inference')
+  const analysis = pickObject(config, 'analysis')
+  const classFilter = String(inference.class_filter || '全部类别')
+  const timeRange = Number(analysis.time_range_minutes || 30)
+
   return (
     <section className="workspace">
       <div className="panel primary-panel sql-panel">
         <PanelHeading eyebrow="Timescale SQL" title="时序分析查询" icon={BarChart3} />
+        <div className="metric-grid analysis-settings">
+          <Metric label="时间范围" value={`${timeRange} 分钟`} />
+          <Metric label="类别过滤" value={classFilter} />
+        </div>
         <ol className="query-list">
           {analysisQueries.map((query) => (
             <li key={query}>{query}</li>
@@ -1004,6 +1029,7 @@ function buildConfigDraft(
   const capture = videoConfig?.capture ?? pickObject(config, 'capture')
   const stream = videoConfig?.stream ?? pickObject(config, 'stream')
   const inference = pickObject(config, 'inference')
+  const analysis = pickObject(config, 'analysis')
   const database = pickObject(config, 'database')
   const spool = pickObject(config, 'spool')
   const remote = pickObject(config, 'remote')
@@ -1026,6 +1052,8 @@ function buildConfigDraft(
     INFERENCE_MODEL: stringValue(inference.model, 'yolov8n.pt'),
     CONFIDENCE_THRESHOLD: stringValue(inference.confidence_threshold, '0.5'),
     FRAME_INTERVAL: stringValue(inference.frame_interval, '10'),
+    DETECTION_CLASS_FILTER: stringValue(inference.class_filter),
+    ANALYSIS_TIME_RANGE_MINUTES: stringValue(analysis.time_range_minutes, '30'),
     DATABASE_URL: '',
     DATABASE_CONNECT_TIMEOUT: stringValue(database.connect_timeout, '5'),
     DATABASE_BATCH_SIZE: stringValue(database.batch_size, '50'),

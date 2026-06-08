@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from .config import Settings
+from .config import Settings, parse_detection_class_filter
 
 
 _MODEL_CACHE: dict[str, Any] = {}
@@ -25,9 +25,11 @@ async def infer_image_bytes(
     filename: str,
 ) -> dict[str, Any]:
     if settings.inference_endpoint:
-        return await _remote_image_inference(settings, image_bytes, filename)
+        payload = await _remote_image_inference(settings, image_bytes, filename)
+    else:
+        payload = _local_image_inference(settings, image_bytes)
 
-    return _local_image_inference(settings, image_bytes)
+    return _filter_inference_payload(settings, payload)
 
 
 async def _remote_inference_status(settings: Settings) -> dict[str, Any]:
@@ -193,3 +195,54 @@ def _local_image_inference(settings: Settings, image_bytes: bytes) -> dict[str, 
         "image": {"width": width, "height": height},
         "detections": detections,
     }
+
+
+def _filter_inference_payload(settings: Settings, payload: dict[str, Any]) -> dict[str, Any]:
+    detections = payload.get("detections")
+    if not isinstance(detections, list):
+        return payload
+
+    allowed_classes = parse_detection_class_filter(settings.detection_class_filter)
+    filtered: list[dict[str, Any]] = []
+    for detection in detections:
+        if not isinstance(detection, dict):
+            continue
+
+        confidence = _float_or_none(detection.get("confidence"))
+        if confidence is not None and confidence < settings.confidence_threshold:
+            continue
+
+        class_name = _detection_class_name(detection)
+        if allowed_classes and class_name.casefold() not in allowed_classes:
+            continue
+
+        filtered.append(detection)
+
+    return {
+        **payload,
+        "detections": filtered,
+        "filter": {
+            "confidence_threshold": settings.confidence_threshold,
+            "class_filter": sorted(allowed_classes),
+        },
+    }
+
+
+def _detection_class_name(detection: dict[str, Any]) -> str:
+    value = (
+        detection.get("object_class")
+        or detection.get("class_name")
+        or detection.get("label")
+        or detection.get("class")
+        or "unknown"
+    )
+    return str(value).strip()
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
