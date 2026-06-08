@@ -510,6 +510,10 @@ h2 {
   border-top-color: #2f6fed;
 }
 
+.accent-security {
+  border-top-color: #cf3f46;
+}
+
 .accent-stream {
   border-top-color: #0f9f77;
 }
@@ -594,6 +598,23 @@ h2 {
   border-color: var(--blue);
 }
 
+.secret-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 6px;
+}
+
+.secret-input input {
+  min-width: 0;
+}
+
+.icon-button {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  justify-content: center;
+}
+
 .config-toolbar {
   display: flex;
   align-items: center;
@@ -610,6 +631,22 @@ h2 {
 .remote-panel {
   display: grid;
   gap: 14px;
+}
+
+.frontend-api-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.api-base-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.api-base-actions {
+  grid-column: 1 / -1;
+  margin-top: 0;
 }
 
 .remote-password-row {
@@ -910,6 +947,7 @@ h2 {
   }
 
   .signal-grid,
+  .api-base-grid,
   .config-grid,
   .config-layout,
   .remote-action-grid,
@@ -947,6 +985,7 @@ h2 {
   }
 
   .signal-grid,
+  .api-base-grid,
   .config-grid,
   .config-layout,
   .field-grid,

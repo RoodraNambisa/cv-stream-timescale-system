@@ -10,6 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DOTENV_PATH = PROJECT_ROOT / ".env"
 
 EDITABLE_ENV_KEYS = {
+    "API_AUTH_TOKEN",
     "CAPTURE_SOURCE_KIND",
     "CAPTURE_SOURCE_URL",
     "CAPTURE_USERNAME",
@@ -25,6 +26,7 @@ EDITABLE_ENV_KEYS = {
     "STREAM_USERNAME",
     "STREAM_PASSWORD",
     "INFERENCE_ENDPOINT",
+    "INFERENCE_API_TOKEN",
     "INFERENCE_DEVICE",
     "INFERENCE_MODEL",
     "CONFIDENCE_THRESHOLD",
@@ -67,6 +69,7 @@ LOCKED_WHILE_CAPTURE_KEYS = {
 class Settings(BaseSettings):
     service_name: str = "cv-stream-timescale-api"
     service_version: str = "0.1.0"
+    api_auth_token: str = ""
 
     capture_source_kind: str = "http_mjpeg"
     capture_source_url: str = ""
@@ -85,6 +88,7 @@ class Settings(BaseSettings):
     stream_password: str = ""
 
     inference_endpoint: str = ""
+    inference_api_token: str = ""
     inference_device: str = "auto"
     inference_model: str = "yolov8n.pt"
     confidence_threshold: float = 0.5

@@ -361,11 +361,15 @@ async def check_grafana(settings: Settings) -> Check:
 
 def config_summary(settings: Settings) -> dict[str, Any]:
     return {
+        "security": {
+            "auth_required": bool(settings.api_auth_token),
+            "api_auth_token": settings.api_auth_token,
+        },
         "capture": {
             "source_kind": settings.capture_source_kind,
             "source_url": settings.capture_source_url,
-            "username_set": bool(settings.capture_username),
-            "password_set": bool(settings.capture_password),
+            "username": settings.capture_username,
+            "password": settings.capture_password,
             "fps_limit": settings.capture_fps_limit,
             "device_id": settings.capture_device_id,
             "task_id": settings.capture_task_id,
@@ -376,11 +380,12 @@ def config_summary(settings: Settings) -> dict[str, Any]:
             "push_url": settings.stream_push_url,
             "receiver_kind": settings.stream_receiver_kind,
             "receiver_status_url": mask_url(settings.stream_receiver_status_url),
-            "username_set": bool(settings.stream_username),
-            "password_set": bool(settings.stream_password),
+            "username": settings.stream_username,
+            "password": settings.stream_password,
         },
         "inference": {
             "endpoint": settings.inference_endpoint,
+            "api_token": settings.inference_api_token,
             "device": settings.inference_device,
             "model": settings.inference_model,
             "confidence_threshold": settings.confidence_threshold,
@@ -392,7 +397,7 @@ def config_summary(settings: Settings) -> dict[str, Any]:
         },
         "database": {
             "configured": bool(settings.database_url),
-            "url": mask_url(settings.database_url),
+            "url": settings.database_url,
             "connect_timeout": settings.database_connect_timeout,
             "batch_size": settings.database_batch_size,
             "flush_interval_ms": settings.database_flush_interval_ms,
@@ -416,7 +421,7 @@ def config_summary(settings: Settings) -> dict[str, Any]:
             "pip_index_urls": settings.remote_pip_index_urls,
             "pip_trusted_hosts": settings.remote_pip_trusted_hosts,
             "pip_proxy_configured": bool(settings.remote_pip_proxy),
-            "pip_proxy_url": mask_url(settings.remote_pip_proxy),
+            "pip_proxy_url": settings.remote_pip_proxy,
         },
         "observability": {
             "grafana_configured": bool(settings.grafana_base_url),

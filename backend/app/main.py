@@ -1,7 +1,9 @@
+import secrets
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from .analysis import analysis_summary
@@ -17,6 +19,7 @@ from .video import probe_video_source, video_config_summary
 settings = get_settings()
 spool = DetectionSpool()
 capture = CaptureManager(spool)
+AUTH_EXEMPT_PATHS = {"/api/health"}
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -35,6 +38,34 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def require_api_token(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    path = request.url.path
+    token = get_settings().api_auth_token.strip()
+    if not token or not path.startswith("/api/") or path in AUTH_EXEMPT_PATHS:
+        return await call_next(request)
+
+    provided = _request_token(request)
+    if provided and secrets.compare_digest(provided, token):
+        return await call_next(request)
+
+    return JSONResponse(
+        status_code=401,
+        content={"detail": "API token required"},
+    )
+
+
+def _request_token(request: Request) -> str:
+    authorization = request.headers.get("authorization", "").strip()
+    if authorization.casefold().startswith("bearer "):
+        return authorization[7:].strip()
+
+    return request.headers.get("x-api-key", "").strip()
 
 
 @app.on_event("startup")

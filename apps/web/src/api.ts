@@ -101,6 +101,8 @@ export type ActionResponse = {
 }
 
 export type ConfigValue = string | number | boolean
+export const API_BASE_STORAGE_KEY = 'cv-stream-timescale-api-base-url'
+export const API_TOKEN_STORAGE_KEY = 'cv-stream-timescale-api-token'
 
 export type RemoteAction =
   | 'check'
@@ -113,8 +115,96 @@ export type RemoteAction =
   | 'api_stop'
   | 'api_logs'
 
+export function normalizeApiBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, '')
+
+  if (!trimmed) {
+    return ''
+  }
+
+  const parsed = new URL(trimmed)
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('API 地址只支持 http 或 https')
+  }
+
+  return parsed.toString().replace(/\/+$/, '')
+}
+
+export function getApiBaseUrl(): string {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  return window.localStorage.getItem(API_BASE_STORAGE_KEY) ?? ''
+}
+
+export function getApiAuthToken(): string {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  return window.localStorage.getItem(API_TOKEN_STORAGE_KEY) ?? ''
+}
+
+export function setApiBaseUrl(value: string): string {
+  const normalized = normalizeApiBaseUrl(value)
+
+  if (typeof window !== 'undefined') {
+    if (normalized) {
+      window.localStorage.setItem(API_BASE_STORAGE_KEY, normalized)
+    } else {
+      window.localStorage.removeItem(API_BASE_STORAGE_KEY)
+    }
+  }
+
+  return normalized
+}
+
+export function setApiAuthToken(value: string): string {
+  const token = value.trim()
+
+  if (typeof window !== 'undefined') {
+    if (token) {
+      window.localStorage.setItem(API_TOKEN_STORAGE_KEY, token)
+    } else {
+      window.localStorage.removeItem(API_TOKEN_STORAGE_KEY)
+    }
+  }
+
+  return token
+}
+
+function resolveApiUrl(url: string): string {
+  if (/^https?:\/\//i.test(url)) {
+    return url
+  }
+
+  const baseUrl = getApiBaseUrl()
+  if (!baseUrl) {
+    return url
+  }
+
+  const path = url.startsWith('/') ? url : `/${url}`
+  return `${baseUrl}${path}`
+}
+
+function withAuthHeaders(init?: RequestInit): RequestInit | undefined {
+  const token = getApiAuthToken()
+  if (!token) {
+    return init
+  }
+
+  const headers = new Headers(init?.headers)
+  if (!headers.has('Authorization') && !headers.has('X-API-Key')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
+  return { ...init, headers }
+}
+
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init)
+  const resolvedUrl = resolveApiUrl(url)
+  const response = await fetch(resolvedUrl, withAuthHeaders(init))
 
   if (!response.ok) {
     let detail: string
@@ -125,14 +215,19 @@ async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
           ? body.detail
           : body.detail?.message
             ? body.detail.message
-            : JSON.stringify(body.detail ?? body)
+          : JSON.stringify(body.detail ?? body)
     } catch {
-      detail = `${url} failed: ${response.status}`
+      detail = `${resolvedUrl} failed: ${response.status}`
     }
     throw new Error(detail)
   }
 
   return response.json()
+}
+
+export async function probeApiBaseUrl(value: string): Promise<HealthResponse> {
+  const normalized = normalizeApiBaseUrl(value)
+  return readJson(`${normalized}/api/health`)
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {

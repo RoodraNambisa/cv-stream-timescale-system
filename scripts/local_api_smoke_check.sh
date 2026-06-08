@@ -27,6 +27,7 @@ import numpy as np
 ROOT = Path.cwd()
 DOTENV_PATH = ROOT / ".env"
 ENV_KEYS = {
+    "API_AUTH_TOKEN",
     "CAPTURE_SOURCE_KIND",
     "CAPTURE_SOURCE_URL",
     "CAPTURE_USERNAME",
@@ -42,6 +43,7 @@ ENV_KEYS = {
     "STREAM_USERNAME",
     "STREAM_PASSWORD",
     "INFERENCE_ENDPOINT",
+    "INFERENCE_API_TOKEN",
     "INFERENCE_DEVICE",
     "INFERENCE_MODEL",
     "CONFIDENCE_THRESHOLD",
@@ -210,6 +212,7 @@ async def main() -> None:
         "\n".join(
             [
                 "CAPTURE_SOURCE_KIND=file",
+                "API_AUTH_TOKEN=",
                 f"CAPTURE_SOURCE_URL={video_path}",
                 "CAPTURE_FPS_LIMIT=20",
                 "CAPTURE_DEVICE_ID=1",
@@ -219,6 +222,7 @@ async def main() -> None:
                 "STREAM_RECEIVER_KIND=mediamtx",
                 f"STREAM_RECEIVER_STATUS_URL={optional_base_url}/receiver/status",
                 "INFERENCE_ENDPOINT=",
+                "INFERENCE_API_TOKEN=",
                 "INFERENCE_DEVICE=cpu",
                 "INFERENCE_MODEL=yolov8n.pt",
                 "CONFIDENCE_THRESHOLD=0.5",
@@ -276,12 +280,26 @@ async def main() -> None:
             assert health["status"] == "ok", health
 
             config = assert_status(await client.get("/api/config"), 200)
+            assert config["security"]["api_auth_token"] == "", config
             assert config["capture"]["source_kind"] == "file", config
             assert config["database"]["configured"] is False, config
             assert config["stream"]["receiver_kind"] == "mediamtx", config
             assert config["observability"]["grafana_configured"] is True, config
             assert "pypi.tuna.tsinghua.edu.cn" in config["remote"]["pip_index_urls"], config
             assert config["remote"]["pip_proxy_configured"] is False, config
+
+            auth_update = assert_status(
+                await client.post("/api/config", json={"values": {"API_AUTH_TOKEN": "smoke-token"}}),
+                200,
+            )
+            assert "API_AUTH_TOKEN" in auth_update["updated"], auth_update
+            blocked = await client.get("/api/config")
+            assert blocked.status_code == 401, (blocked.status_code, blocked.text)
+            health_without_token = assert_status(await client.get("/api/health"), 200)
+            assert health_without_token["status"] == "ok", health_without_token
+            client.headers["Authorization"] = "Bearer smoke-token"
+            authed_config = assert_status(await client.get("/api/config"), 200)
+            assert authed_config["security"]["api_auth_token"] == "smoke-token", authed_config
 
             environment = assert_status(await client.get("/api/environment"), 200)
             checks = {item["name"]: item for item in environment["checks"]}

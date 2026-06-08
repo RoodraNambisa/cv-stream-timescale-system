@@ -5,6 +5,8 @@ import {
   BarChart3,
   Cpu,
   Database,
+  Eye,
+  EyeOff,
   Gauge,
   HardDrive,
   Layers3,
@@ -45,10 +47,15 @@ import {
   fetchSpoolStatus,
   fetchVideoConfig,
   flushSpool,
+  getApiAuthToken,
+  getApiBaseUrl,
   probeEnvironment,
+  probeApiBaseUrl,
   probeVideo,
   reloadConfig,
   runRemoteAction,
+  setApiAuthToken,
+  setApiBaseUrl,
   startCapture,
   stopCapture,
   updateConfig,
@@ -127,6 +134,15 @@ const lockedConfigKeys = new Set([
 
 const configGroups: ConfigGroup[] = [
   {
+    eyebrow: 'Security',
+    title: '接口鉴权',
+    icon: ShieldCheck,
+    accent: 'accent-security',
+    fields: [
+      { key: 'API_AUTH_TOKEN', label: '入站 API token', input: 'password', sensitive: true, placeholder: '设置后保护除健康检查外的 API…' },
+    ],
+  },
+  {
     eyebrow: 'Capture',
     title: '视频输入',
     icon: Video,
@@ -163,6 +179,7 @@ const configGroups: ConfigGroup[] = [
     accent: 'accent-gpu',
     fields: [
       { key: 'INFERENCE_ENDPOINT', label: '远端推理直连 URL', input: 'url', placeholder: 'http://服务器:8000…' },
+      { key: 'INFERENCE_API_TOKEN', label: '远端推理 API token', input: 'password', sensitive: true, placeholder: '远端 API 启用鉴权时填写…' },
       { key: 'INFERENCE_DEVICE', label: '推理设备', input: 'select', options: ['auto', 'cpu', 'cuda'] },
       { key: 'INFERENCE_MODEL', label: '模型文件', input: 'text' },
       { key: 'CONFIDENCE_THRESHOLD', label: '置信度阈值', input: 'number' },
@@ -185,7 +202,7 @@ const configGroups: ConfigGroup[] = [
     icon: Database,
     accent: 'accent-db',
     fields: [
-      { key: 'DATABASE_URL', label: '数据库连接串', input: 'password', sensitive: true, placeholder: '留空保留当前连接串…' },
+      { key: 'DATABASE_URL', label: '数据库连接串', input: 'password', sensitive: true, placeholder: 'postgresql://user:password@host:5432/cv_stream…' },
       { key: 'DATABASE_CONNECT_TIMEOUT', label: '连接超时秒数', input: 'number' },
       { key: 'DATABASE_BATCH_SIZE', label: '批量写入条数', input: 'number' },
       { key: 'DATABASE_FLUSH_INTERVAL_MS', label: '刷库间隔毫秒', input: 'number' },
@@ -207,7 +224,7 @@ const configGroups: ConfigGroup[] = [
       { key: 'REMOTE_SSH_KEY_PATH', label: 'SSH 私钥路径', input: 'text', placeholder: '可选…' },
       { key: 'REMOTE_PIP_INDEX_URLS', label: 'pip 镜像源列表', input: 'text', placeholder: '空格分隔多个 simple URL…' },
       { key: 'REMOTE_PIP_TRUSTED_HOSTS', label: 'pip trusted-host', input: 'text', placeholder: '空格分隔多个 host…' },
-      { key: 'REMOTE_PIP_PROXY', label: 'pip 代理 URL', input: 'password', sensitive: true, placeholder: '留空保留当前代理…' },
+      { key: 'REMOTE_PIP_PROXY', label: 'pip 代理 URL', input: 'password', sensitive: true, placeholder: 'http://user:password@proxy:port…' },
     ],
   },
   {
@@ -256,6 +273,8 @@ const remoteActions: Array<{ action: RemoteAction; label: string; icon: typeof A
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>(() => getTabFromLocation())
+  const [frontendApiBase, setFrontendApiBase] = useState(() => getApiBaseUrl())
+  const [frontendApiToken, setFrontendApiToken] = useState(() => getApiAuthToken())
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -270,43 +289,43 @@ function App() {
   }, [])
 
   const health = useQuery({
-    queryKey: ['health'],
+    queryKey: ['health', frontendApiBase],
     queryFn: fetchHealth,
     refetchInterval: 10_000,
   })
 
   const environment = useQuery({
-    queryKey: ['environment'],
+    queryKey: ['environment', frontendApiBase, frontendApiToken],
     queryFn: fetchEnvironment,
     refetchInterval: 10_000,
   })
 
   const spool = useQuery({
-    queryKey: ['spool'],
+    queryKey: ['spool', frontendApiBase, frontendApiToken],
     queryFn: fetchSpoolStatus,
     refetchInterval: 10_000,
   })
 
   const video = useQuery({
-    queryKey: ['video-config'],
+    queryKey: ['video-config', frontendApiBase, frontendApiToken],
     queryFn: fetchVideoConfig,
     refetchInterval: 20_000,
   })
 
   const inference = useQuery({
-    queryKey: ['inference-status'],
+    queryKey: ['inference-status', frontendApiBase, frontendApiToken],
     queryFn: fetchInferenceStatus,
     refetchInterval: 10_000,
   })
 
   const capture = useQuery({
-    queryKey: ['capture-status'],
+    queryKey: ['capture-status', frontendApiBase, frontendApiToken],
     queryFn: fetchCaptureStatus,
     refetchInterval: 3_000,
   })
 
   const analysis = useQuery({
-    queryKey: ['analysis-summary'],
+    queryKey: ['analysis-summary', frontendApiBase, frontendApiToken],
     queryFn: fetchAnalysisSummary,
     refetchInterval: 10_000,
   })
@@ -386,6 +405,20 @@ function App() {
     writeTabToUrl(tab, 'push')
   }
 
+  function handleFrontendApiBaseChange(value: string): string {
+    const normalized = setApiBaseUrl(value)
+    setFrontendApiBase(normalized)
+    void queryClient.invalidateQueries()
+    return normalized
+  }
+
+  function handleFrontendApiTokenChange(value: string): string {
+    const token = setApiAuthToken(value)
+    setFrontendApiToken(token)
+    void queryClient.invalidateQueries()
+    return token
+  }
+
   return (
     <>
       <a className="skip-link" href="#main-content">跳到主内容</a>
@@ -401,9 +434,12 @@ function App() {
           </div>
         </div>
         <div className="top-actions" aria-label="系统状态">
-          <span className={`pill ${apiStatus === 'ok' ? 'ok' : 'warn'}`}>
+          <span
+            className={`pill ${apiStatus === 'ok' ? 'ok' : 'warn'}`}
+            title={frontendApiBase || '同源 /api'}
+          >
             <Server size={16} aria-hidden="true" />
-            API {apiStatus}
+            API {apiStatus} · {frontendApiBase ? '远端' : '本地'}
           </span>
           <span className={`pill ${environmentSummary?.error ? 'error' : 'ok'}`}>
             <ShieldCheck size={16} aria-hidden="true" />
@@ -491,6 +527,10 @@ function App() {
           savePending={updateConfigMutation.isPending}
           saveResult={updateConfigMutation.data}
           saveError={updateConfigMutation.error?.message}
+          frontendApiBase={frontendApiBase}
+          frontendApiToken={frontendApiToken}
+          onFrontendApiBaseChange={handleFrontendApiBaseChange}
+          onFrontendApiTokenChange={handleFrontendApiTokenChange}
           onRemoteAction={(action, payload) => remoteMutation.mutate({ action, payload })}
           remotePending={remoteMutation.isPending}
           remoteResult={remoteMutation.data}
@@ -763,6 +803,10 @@ function ConfigPage({
   savePending,
   saveResult,
   saveError,
+  frontendApiBase,
+  frontendApiToken,
+  onFrontendApiBaseChange,
+  onFrontendApiTokenChange,
   onRemoteAction,
   remotePending,
   remoteResult,
@@ -782,6 +826,10 @@ function ConfigPage({
   savePending: boolean
   saveResult?: Record<string, unknown>
   saveError?: string
+  frontendApiBase: string
+  frontendApiToken: string
+  onFrontendApiBaseChange: (value: string) => string
+  onFrontendApiTokenChange: (value: string) => string
   onRemoteAction: (action: RemoteAction, payload?: { remote_db_password?: string }) => void
   remotePending: boolean
   remoteResult?: Record<string, unknown>
@@ -791,7 +839,14 @@ function ConfigPage({
   const [draft, setDraft] = useState<ConfigDraft>({})
   const [dirty, setDirty] = useState(false)
   const [remoteDbPassword, setRemoteDbPassword] = useState('')
+  const [apiBaseDraft, setApiBaseDraft] = useState(frontendApiBase)
+  const [apiTokenDraft, setApiTokenDraft] = useState(frontendApiToken)
+  const [apiTokenVisible, setApiTokenVisible] = useState(false)
+  const [revealedFields, setRevealedFields] = useState<Set<string>>(() => new Set())
+  const [apiBasePending, setApiBasePending] = useState(false)
+  const [apiBaseMessage, setApiBaseMessage] = useState('')
   const visibleDraft = dirty ? draft : currentDraft
+  const configuredRemoteApiBase = visibleDraft.REMOTE_API_BASE_URL ?? ''
 
   useEffect(() => {
     if (!dirty) {
@@ -831,6 +886,45 @@ function ConfigPage({
     onRemoteAction(action, payload)
   }
 
+  function saveFrontendApiBase(value = apiBaseDraft) {
+    try {
+      const normalized = onFrontendApiBaseChange(value)
+      setApiBaseDraft(normalized)
+      setApiBaseMessage(normalized ? `前端请求已切到 ${normalized}` : '前端已恢复同源 /api')
+    } catch (error) {
+      setApiBaseMessage(error instanceof Error ? error.message : 'API 地址无效')
+    }
+  }
+
+  function saveFrontendApiToken() {
+    const token = onFrontendApiTokenChange(apiTokenDraft)
+    setApiBaseMessage(token ? 'API token 已保存到当前浏览器' : 'API token 已清除')
+  }
+
+  function toggleSensitiveField(key: string) {
+    setRevealedFields((current) => {
+      const next = new Set(current)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
+  async function testFrontendApiBase() {
+    setApiBasePending(true)
+    try {
+      const result = await probeApiBaseUrl(apiBaseDraft)
+      setApiBaseMessage(`${result.service} ${result.status}`)
+    } catch (error) {
+      setApiBaseMessage(error instanceof Error ? error.message : 'API 检测失败')
+    } finally {
+      setApiBasePending(false)
+    }
+  }
+
   const saveMessage = saveError ?? formatSaveResult(saveResult)
   const remoteOutput = remoteError ?? formatRemoteOutput(remoteResult)
   const configProbeMessage = configProbeError ?? formatProbeSummary(configProbeResult)
@@ -865,6 +959,32 @@ function ConfigPage({
                         </option>
                       ))}
                     </select>
+                  ) : field.sensitive ? (
+                    <div className="secret-input">
+                      <input
+                        autoComplete="off"
+                        inputMode={inputModeForField(field)}
+                        name={field.key}
+                        spellCheck={false}
+                        type={revealedFields.has(field.key) ? 'text' : 'password'}
+                        step={field.input === 'number' ? numberStepForField(field) : undefined}
+                        value={visibleDraft[field.key] ?? ''}
+                        placeholder={field.placeholder ?? ''}
+                        onChange={(event) => updateField(field.key, event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="icon-button"
+                        title={revealedFields.has(field.key) ? '隐藏' : '显示'}
+                        onClick={() => toggleSensitiveField(field.key)}
+                      >
+                        {revealedFields.has(field.key) ? (
+                          <EyeOff size={17} aria-hidden="true" />
+                        ) : (
+                          <Eye size={17} aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
                   ) : (
                     <input
                       autoComplete="off"
@@ -907,6 +1027,97 @@ function ConfigPage({
           </div>
         )
       })}
+
+      <div className="panel config-card accent-remote frontend-api-panel full-config">
+        <PanelHeading eyebrow="Browser API" title="前端 API 连接" icon={Server} />
+        <div className={`notice ${frontendApiBase ? 'warn' : 'ok'}`}>
+          {frontendApiBase
+            ? `当前浏览器直连 ${frontendApiBase}`
+            : '当前浏览器使用同源 /api。本地开发时由 Vite 代理到 127.0.0.1:8000。'}
+        </div>
+        <div className="api-base-grid">
+          <label className="config-field">
+            <span className="field-head">
+              <span>浏览器 API Base URL</span>
+            </span>
+            <input
+              autoComplete="off"
+              inputMode="url"
+              name="FRONTEND_API_BASE_URL"
+              spellCheck={false}
+              type="url"
+              value={apiBaseDraft}
+              placeholder="留空使用本地 /api，或填写 http://服务器:8000…"
+              onChange={(event) => setApiBaseDraft(event.target.value)}
+            />
+          </label>
+          <label className="config-field">
+            <span className="field-head">
+              <span>API token</span>
+              <small>{frontendApiToken ? '已保存' : '未保存'}</small>
+            </span>
+            <div className="secret-input">
+              <input
+                autoComplete="off"
+                inputMode="text"
+                name="FRONTEND_API_AUTH_TOKEN"
+                spellCheck={false}
+                type={apiTokenVisible ? 'text' : 'password'}
+                value={apiTokenDraft}
+                placeholder="保存到当前浏览器，请求时作为 Bearer token…"
+                onChange={(event) => setApiTokenDraft(event.target.value)}
+              />
+              <button
+                type="button"
+                className="icon-button"
+                title={apiTokenVisible ? '隐藏' : '显示'}
+                onClick={() => setApiTokenVisible((current) => !current)}
+              >
+                {apiTokenVisible ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+              </button>
+            </div>
+          </label>
+          <div className="action-row api-base-actions">
+            <button type="button" onClick={testFrontendApiBase} disabled={apiBasePending || !apiBaseDraft.trim()}>
+              <ShieldCheck size={17} aria-hidden="true" />
+              检测 API
+            </button>
+            <button type="button" onClick={() => saveFrontendApiBase()}>
+              <Save size={17} aria-hidden="true" />
+              保存前端连接
+            </button>
+            <button type="button" onClick={saveFrontendApiToken} disabled={!apiTokenDraft}>
+              <ShieldCheck size={17} aria-hidden="true" />
+              保存 token
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setApiTokenDraft('')
+                onFrontendApiTokenChange('')
+                setApiBaseMessage('API token 已清除')
+              }}
+              disabled={!frontendApiToken && !apiTokenDraft}
+            >
+              <RotateCw size={17} aria-hidden="true" />
+              清除 token
+            </button>
+            <button
+              type="button"
+              onClick={() => saveFrontendApiBase(configuredRemoteApiBase)}
+              disabled={!configuredRemoteApiBase}
+            >
+              <Server size={17} aria-hidden="true" />
+              使用远端配置
+            </button>
+            <button type="button" onClick={() => saveFrontendApiBase('')} disabled={!frontendApiBase && !apiBaseDraft}>
+              <RotateCw size={17} aria-hidden="true" />
+              恢复本地
+            </button>
+            {apiBaseMessage && <span className="action-result" aria-live="polite">{apiBaseMessage}</span>}
+          </div>
+        </div>
+      </div>
 
       <div className="panel config-toolbar full-config">
         <div>
@@ -1288,12 +1499,14 @@ function buildConfigDraft(
   const spool = pickObject(config, 'spool')
   const remote = pickObject(config, 'remote')
   const observability = pickObject(config, 'observability')
+  const security = pickObject(config, 'security')
 
   return {
+    API_AUTH_TOKEN: stringValue(security.api_auth_token),
     CAPTURE_SOURCE_KIND: stringValue(capture.source_kind, 'http_mjpeg'),
     CAPTURE_SOURCE_URL: stringValue(capture.source_url),
-    CAPTURE_USERNAME: '',
-    CAPTURE_PASSWORD: '',
+    CAPTURE_USERNAME: stringValue(capture.username),
+    CAPTURE_PASSWORD: stringValue(capture.password),
     CAPTURE_FPS_LIMIT: stringValue(capture.fps_limit, '15'),
     CAPTURE_DEVICE_ID: stringValue(capture.device_id, '1'),
     CAPTURE_TASK_ID: stringValue(capture.task_id, '1'),
@@ -1302,16 +1515,17 @@ function buildConfigDraft(
     STREAM_PUSH_URL: stringValue(stream.push_url),
     STREAM_RECEIVER_KIND: stringValue(stream.receiver_kind, 'none'),
     STREAM_RECEIVER_STATUS_URL: stringValue(stream.receiver_status_url),
-    STREAM_USERNAME: '',
-    STREAM_PASSWORD: '',
+    STREAM_USERNAME: stringValue(stream.username),
+    STREAM_PASSWORD: stringValue(stream.password),
     INFERENCE_ENDPOINT: stringValue(inference.endpoint),
+    INFERENCE_API_TOKEN: stringValue(inference.api_token),
     INFERENCE_DEVICE: stringValue(inference.device, 'auto'),
     INFERENCE_MODEL: stringValue(inference.model, 'yolov8n.pt'),
     CONFIDENCE_THRESHOLD: stringValue(inference.confidence_threshold, '0.5'),
     FRAME_INTERVAL: stringValue(inference.frame_interval, '10'),
     DETECTION_CLASS_FILTER: stringValue(inference.class_filter),
     ANALYSIS_TIME_RANGE_MINUTES: stringValue(analysis.time_range_minutes, '30'),
-    DATABASE_URL: '',
+    DATABASE_URL: stringValue(database.url),
     DATABASE_CONNECT_TIMEOUT: stringValue(database.connect_timeout, '5'),
     DATABASE_BATCH_SIZE: stringValue(database.batch_size, '50'),
     DATABASE_FLUSH_INTERVAL_MS: stringValue(database.flush_interval_ms, '1000'),
@@ -1325,7 +1539,7 @@ function buildConfigDraft(
     REMOTE_SSH_KEY_PATH: stringValue(remote.ssh_key_path),
     REMOTE_PIP_INDEX_URLS: stringValue(remote.pip_index_urls),
     REMOTE_PIP_TRUSTED_HOSTS: stringValue(remote.pip_trusted_hosts),
-    REMOTE_PIP_PROXY: '',
+    REMOTE_PIP_PROXY: stringValue(remote.pip_proxy_url),
     GRAFANA_BASE_URL: stringValue(observability.grafana_base_url),
     GRAFANA_DASHBOARD_URL: stringValue(observability.grafana_dashboard_url),
   }
@@ -1341,11 +1555,7 @@ function collectConfigValues(
     for (const field of group.fields) {
       const raw = draft[field.key] ?? ''
 
-      if (field.sensitive && raw === '') {
-        continue
-      }
-
-      if (!field.sensitive && raw === (currentDraft[field.key] ?? '')) {
+      if (raw === (currentDraft[field.key] ?? '')) {
         continue
       }
 
@@ -1369,10 +1579,6 @@ function collectProbeValues(draft: ConfigDraft): Record<string, ConfigValue> {
   for (const group of configGroups) {
     for (const field of group.fields) {
       const raw = draft[field.key] ?? ''
-
-      if (field.sensitive && raw === '') {
-        continue
-      }
 
       if (field.input === 'number') {
         if (raw === '') {
@@ -1440,23 +1646,7 @@ function numberStepForField(field: ConfigField): string {
 }
 
 function placeholderForField(field: ConfigField, config?: Record<string, unknown>): string {
-  if (field.key === 'DATABASE_URL') {
-    const currentUrl = pickObject(config, 'database').url
-    return currentUrl ? String(currentUrl) : field.placeholder ?? ''
-  }
-
-  if (field.key === 'CAPTURE_PASSWORD') {
-    return pickObject(config, 'capture').password_set ? '已设置，留空保留…' : '未设置…'
-  }
-
-  if (field.key === 'STREAM_PASSWORD') {
-    return pickObject(config, 'stream').password_set ? '已设置，留空保留…' : '未设置…'
-  }
-
-  if (field.key === 'REMOTE_PIP_PROXY') {
-    return pickObject(config, 'remote').pip_proxy_configured ? '已设置，留空保留…' : field.placeholder ?? ''
-  }
-
+  void config
   return field.placeholder ?? ''
 }
 

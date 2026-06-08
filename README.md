@@ -96,7 +96,16 @@ POST /api/config
 POST /api/config/reload
 ```
 
-React 配置页通过 `POST /api/config` 写项目根目录 `.env`，然后热重载后端配置。密码、`DATABASE_URL` 这类敏感字段不回显；前端留空时后端保留原值。采集运行时，后端拒绝修改数据库 URL、视频源 URL、推流 URL、推理端点、模型路径和 spool 路径。
+React 配置页通过 `POST /api/config` 写项目根目录 `.env`，然后热重载后端配置。密码、token、`DATABASE_URL` 这类字段会回填到表单，默认用密码框遮挡，点小眼睛后显示具体值。采集运行时，后端拒绝修改数据库 URL、视频源 URL、推流 URL、推理端点、模型路径和 spool 路径。
+
+API 鉴权：
+
+```text
+API_AUTH_TOKEN=
+INFERENCE_API_TOKEN=
+```
+
+`API_AUTH_TOKEN` 为空时，接口保持开发模式；设置后，除 `/api/health` 外的接口都要求 `Authorization: Bearer <token>` 或 `X-API-Key: <token>`。`INFERENCE_API_TOKEN` 用于当前后端调用受保护的远端推理 API。
 
 检测结果缓存接口：
 
@@ -203,6 +212,7 @@ cp .env.example .env
 - `STREAM_RECEIVER_KIND`：`none`、`mediamtx`、`nginx_rtmp` 或 `custom`
 - `STREAM_RECEIVER_STATUS_URL`：MediaMTX API、nginx-rtmp stat 或自定义接收器状态 URL
 - `INFERENCE_ENDPOINT`：留空时本地推理，填写后走远端推理
+- `INFERENCE_API_TOKEN`：远端推理 API 启用鉴权时填写
 - `DETECTION_CLASS_FILTER`：逗号分隔的类别白名单，留空表示不过滤
 - `ANALYSIS_TIME_RANGE_MINUTES`：分析页图表和查询的默认时间窗口
 - `DATABASE_URL`：本地或远端 PostgreSQL/TimescaleDB
@@ -210,7 +220,7 @@ cp .env.example .env
 - `GRAFANA_BASE_URL`：可选 Grafana 地址，环境检测会访问 `/api/health`
 - `GRAFANA_DASHBOARD_URL`：可选 Grafana 面板地址，前端配置页会保留该链接
 
-前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`REMOTE_API_BASE_URL` 是本地或前端可访问的远端 API 直连入口，环境检测会访问它的 `/api/health`。`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制服务器上 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测服务器、同步项目、安装依赖、配库、启动或停止远端 API。`REMOTE_PIP_INDEX_URLS`、`REMOTE_PIP_TRUSTED_HOSTS` 和 `REMOTE_PIP_PROXY` 只影响远端依赖安装。
+前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`API_AUTH_TOKEN` 保护当前 FastAPI 入站接口。`REMOTE_API_BASE_URL` 是本地或前端可访问的远端 API 直连入口，环境检测会访问它的 `/api/health`。`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制服务器上 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测服务器、同步项目、安装依赖、配库、启动或停止远端 API。`REMOTE_PIP_INDEX_URLS`、`REMOTE_PIP_TRUSTED_HOSTS` 和 `REMOTE_PIP_PROXY` 只影响远端依赖安装。
 
 Grafana 是可选观测入口。React 分析页已经能展示类别分布、时间桶和统计元数据；如果你部署了 Grafana，可以让它直接读取同一个 PostgreSQL/TimescaleDB，再把 `GRAFANA_BASE_URL` 和 `GRAFANA_DASHBOARD_URL` 写入配置，环境检测会显示 Grafana 是否可达。
 
@@ -370,6 +380,7 @@ POST /api/remote/api_logs
 CAPTURE_SOURCE_KIND=http_mjpeg
 CAPTURE_SOURCE_URL=http://手机IP:8080/video
 INFERENCE_ENDPOINT=http://服务器:8000
+INFERENCE_API_TOKEN=远端API令牌
 DATABASE_URL=postgresql://cv_user:密码@数据库主机:5432/cv_stream
 ```
 

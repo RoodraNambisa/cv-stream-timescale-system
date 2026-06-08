@@ -34,9 +34,10 @@ async def infer_image_bytes(
 
 async def _remote_inference_status(settings: Settings) -> dict[str, Any]:
     base_url = settings.inference_endpoint.rstrip("/")
+    headers = _remote_auth_headers(settings)
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            response = await client.get(f"{base_url}/api/inference/status")
+            response = await client.get(f"{base_url}/api/inference/status", headers=headers)
     except Exception as exc:
         return {
             "status": "error",
@@ -65,9 +66,14 @@ async def _remote_image_inference(
 ) -> dict[str, Any]:
     base_url = settings.inference_endpoint.rstrip("/")
     files = {"file": (filename or "frame.jpg", image_bytes, "application/octet-stream")}
+    headers = _remote_auth_headers(settings)
 
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(f"{base_url}/api/inference/image", files=files)
+        response = await client.post(
+            f"{base_url}/api/inference/image",
+            files=files,
+            headers=headers,
+        )
 
     if response.status_code >= 400:
         return {
@@ -226,6 +232,14 @@ def _filter_inference_payload(settings: Settings, payload: dict[str, Any]) -> di
             "class_filter": sorted(allowed_classes),
         },
     }
+
+
+def _remote_auth_headers(settings: Settings) -> dict[str, str]:
+    token = settings.inference_api_token.strip()
+    if not token:
+        return {}
+
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _detection_class_name(detection: dict[str, Any]) -> str:
