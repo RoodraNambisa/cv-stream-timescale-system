@@ -163,6 +163,10 @@ check_frontend_assets() {
   grep -q "检测当前配置" apps/web/src/App.tsx || fail "frontend missing config probe action"
   grep -q "aria-live" apps/web/src/App.tsx || fail "frontend missing live regions"
   grep -q "prefers-reduced-motion" apps/web/src/App.css || fail "frontend missing reduced-motion handling"
+  grep -q "当前表单预检" apps/web/README.md || fail "frontend README missing current workflow"
+  local early_word
+  early_word="第一""版"
+  ! grep -q "$early_word" apps/web/README.md || fail "frontend README still describes an early skeleton"
 }
 
 check_backend_assets() {
