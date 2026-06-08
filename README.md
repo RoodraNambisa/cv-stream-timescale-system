@@ -214,6 +214,16 @@ cp .env.example .env
 
 Grafana 是可选观测入口。React 分析页已经能展示类别分布、时间桶和统计元数据；如果你部署了 Grafana，可以让它直接读取同一个 PostgreSQL/TimescaleDB，再把 `GRAFANA_BASE_URL` 和 `GRAFANA_DASHBOARD_URL` 写入配置，环境检测会显示 Grafana 是否可达。
 
+配置片段模板：
+
+```text
+deploy/env/local-all.env.example
+deploy/env/edge-to-remote.env.example
+deploy/env/server-all.env.example
+```
+
+这些文件只提供可复制的键值组合，不引入固定运行模式。按实际链路把需要的键复制进 `.env`，再通过配置页或 `POST /api/config/reload` 让后端重载。数据库、远端推理 API、MediaMTX/nginx-rtmp 和 Grafana 都按各自 URL 直连；SSH 仍然只是可选管理通道。
+
 可选组件模板：
 
 ```text

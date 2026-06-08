@@ -81,11 +81,15 @@ check_project_shape() {
   require_dir backend/app
   require_dir db
   require_dir deploy
+  require_dir deploy/env
   require_dir scripts
   require_file runtime/.gitkeep
   require_file .env.example
   require_file db/schema.sql
   require_file db/analysis_queries.sql
+  require_file deploy/env/local-all.env.example
+  require_file deploy/env/edge-to-remote.env.example
+  require_file deploy/env/server-all.env.example
   require_file deploy/mediamtx.yml
   require_file deploy/nginx-rtmp.conf
   require_file deploy/grafana/provisioning/datasources/timescaledb.yml
@@ -178,6 +182,18 @@ check_backend_assets() {
 
 check_deploy_assets() {
   echo "==> checking optional deploy assets"
+
+  grep -q "CAPTURE_SOURCE_KIND" deploy/env/local-all.env.example || fail "local env template missing capture config"
+  grep -q "INFERENCE_ENDPOINT=" deploy/env/local-all.env.example || fail "local env template missing local inference config"
+  grep -q "INFERENCE_ENDPOINT=http://REMOTE_API_HOST:8000" deploy/env/edge-to-remote.env.example || fail "edge env template missing remote inference endpoint"
+  grep -q "DATABASE_URL=postgresql://" deploy/env/edge-to-remote.env.example || fail "edge env template missing database URL"
+  grep -q "STREAM_RECEIVER_KIND=mediamtx" deploy/env/server-all.env.example || fail "server env template missing stream receiver"
+  grep -q "GRAFANA_BASE_URL" deploy/env/server-all.env.example || fail "server env template missing Grafana config"
+  local mode_key
+  mode_key="RUN""_MODE"
+  if grep -R -n "$mode_key" deploy/env README.md .env.example >&2; then
+    fail "env templates must use independent config keys"
+  fi
 
   grep -q "apiAddress: :9997" deploy/mediamtx.yml || fail "MediaMTX template missing API port"
   grep -q "rtmpAddress: :1935" deploy/mediamtx.yml || fail "MediaMTX template missing RTMP port"
