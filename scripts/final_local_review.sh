@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+fail() {
+  echo "final_local_review_failed: $*" >&2
+  exit 1
+}
+
+run_step() {
+  echo
+  echo "==> $*"
+  "$@"
+}
+
+require_file() {
+  local path="$1"
+  [ -f "$path" ] || fail "missing file: $path"
+}
+
+require_dir() {
+  local path="$1"
+  [ -d "$path" ] || fail "missing directory: $path"
+}
+
+check_tracked_outputs() {
+  echo "==> checking tracked files"
+
+  local forbidden
+  forbidden="$(
+    git ls-files \
+      | grep -E '(^|/)(\.env($|\.)|runtime/|docs/)|\.(db|sqlite|sqlite3|log|pt|onnx|engine|mp4|mov|avi)$' \
+      | grep -v '^\.env\.example$' \
+      | grep -v '^runtime/\.gitkeep$' \
+      || true
+  )"
+  if [ -n "$forbidden" ]; then
+    echo "$forbidden" >&2
+    fail "forbidden tracked file"
+  fi
+
+  local blocked_terms
+  blocked_terms=(
+    "作""业"
+    "课""程"
+    "大""作""业"
+    "高级""软件""工程"
+    "实""验"
+    "报""告"
+    "演""示"
+    "截""图"
+    "提交""物"
+    "老""师"
+    "学""校"
+    "教""学"
+    "stu""dent"
+    "co""urse"
+    "home""work"
+    "assign""ment"
+    "re""port"
+    "de""mo"
+    "screen""shot"
+    "sub""mission"
+  )
+  local blocked_pattern
+  blocked_pattern="$(IFS='|'; echo "${blocked_terms[*]}")"
+  local blocked_matches
+  blocked_matches="$(git grep -n -E "$blocked_pattern" -- . ':!docs' || true)"
+  if [ -n "$blocked_matches" ]; then
+    echo "$blocked_matches" >&2
+    fail "forbidden tracked wording"
+  fi
+}
+
+check_project_shape() {
+  echo "==> checking project shape"
+
+  require_dir apps/web
+  require_dir backend/app
+  require_dir db
+  require_dir deploy
+  require_dir scripts
+  require_file runtime/.gitkeep
+  require_file .env.example
+  require_file db/schema.sql
+  require_file db/analysis_queries.sql
+  require_file backend/app/main.py
+  require_file apps/web/package.json
+}
+
+check_dependency_locations() {
+  echo "==> checking dependency locations"
+
+  if find . -path ./.git -prune -o -type d -name node_modules -print | grep -v -E '^./apps/web/node_modules(/.*)?$' | grep -q .; then
+    find . -path ./.git -prune -o -type d -name node_modules -print >&2
+    fail "node_modules outside apps/web"
+  fi
+
+  if find . -path ./.git -prune -o -type d -name '.venv' -print | grep -v '^./.venv$' | grep -q .; then
+    find . -path ./.git -prune -o -type d -name '.venv' -print >&2
+    fail ".venv outside project root"
+  fi
+}
+
+check_runtime_paths_ignored() {
+  echo "==> checking ignored runtime paths"
+
+  git check-ignore -q .env || fail ".env is not ignored"
+  git check-ignore -q runtime/spool.db || fail "runtime spool is not ignored"
+  git check-ignore -q docs/local-notes.md || fail "docs materials are not ignored"
+  git check-ignore -q yolov8n.pt || fail "model weights are not ignored"
+}
+
+check_scripts_executable() {
+  echo "==> checking script modes"
+
+  for script in \
+    scripts/local_smoke_check.sh \
+    scripts/local_api_smoke_check.sh \
+    scripts/final_local_review.sh \
+    scripts/run_backend.sh \
+    scripts/run_web.sh \
+    scripts/sync_remote_project.sh \
+    scripts/remote_smoke_check.sh
+  do
+    [ -x "$script" ] || fail "script is not executable: $script"
+  done
+}
+
+check_sql_assets() {
+  echo "==> checking SQL assets"
+
+  grep -q "CREATE EXTENSION IF NOT EXISTS timescaledb" db/schema.sql || fail "schema missing TimescaleDB extension"
+  grep -q "CREATE TABLE IF NOT EXISTS device" db/schema.sql || fail "schema missing device table"
+  grep -q "CREATE TABLE IF NOT EXISTS cv_task" db/schema.sql || fail "schema missing cv_task table"
+  grep -q "CREATE TABLE IF NOT EXISTS cv_result_meta" db/schema.sql || fail "schema missing cv_result_meta table"
+  grep -q "CREATE TABLE IF NOT EXISTS cv_detection_stream" db/schema.sql || fail "schema missing detection stream table"
+  grep -q "create_hypertable" db/schema.sql || fail "schema missing hypertable call"
+  grep -q "CREATE MATERIALIZED VIEW IF NOT EXISTS minutely_object_stats" db/schema.sql || fail "schema missing continuous aggregate"
+  grep -q "time_bucket" db/analysis_queries.sql || fail "analysis queries missing time_bucket"
+}
+
+check_frontend_assets() {
+  echo "==> checking frontend source"
+
+  grep -q "总览" apps/web/src/App.tsx || fail "frontend missing overview tab"
+  grep -q "配置" apps/web/src/App.tsx || fail "frontend missing config tab"
+  grep -q "任务" apps/web/src/App.tsx || fail "frontend missing tasks tab"
+  grep -q "分析" apps/web/src/App.tsx || fail "frontend missing analysis tab"
+  grep -q "STREAM_RECEIVER_KIND" apps/web/src/App.tsx || fail "frontend missing stream receiver config"
+  grep -q "GRAFANA_BASE_URL" apps/web/src/App.tsx || fail "frontend missing Grafana config"
+  grep -q "aria-live" apps/web/src/App.tsx || fail "frontend missing live regions"
+  grep -q "prefers-reduced-motion" apps/web/src/App.css || fail "frontend missing reduced-motion handling"
+}
+
+check_backend_assets() {
+  echo "==> checking backend source"
+
+  grep -q '"/api/capture/start"' backend/app/main.py || fail "backend missing capture start endpoint"
+  grep -q '"/api/spool/flush"' backend/app/main.py || fail "backend missing spool flush endpoint"
+  grep -q '"/api/inference/image"' backend/app/main.py || fail "backend missing inference image endpoint"
+  grep -q '"/api/remote/{action}"' backend/app/main.py || fail "backend missing remote action endpoint"
+  grep -q "DATABASE_URL" backend/app/config.py || fail "backend missing database config"
+  grep -q "INFERENCE_ENDPOINT" backend/app/config.py || fail "backend missing inference endpoint config"
+  grep -q "CAPTURE_SOURCE_KIND" backend/app/config.py || fail "backend missing capture source config"
+  grep -q "STREAM_RECEIVER_KIND" backend/app/config.py || fail "backend missing stream receiver config"
+  grep -q "GRAFANA_BASE_URL" backend/app/config.py || fail "backend missing Grafana config"
+  grep -q "check_stream_receiver" backend/app/environment.py || fail "backend missing stream receiver check"
+  grep -q "check_grafana" backend/app/environment.py || fail "backend missing Grafana check"
+}
+
+check_tracked_outputs
+check_project_shape
+check_dependency_locations
+check_runtime_paths_ignored
+check_scripts_executable
+check_sql_assets
+check_frontend_assets
+check_backend_assets
+
+run_step bash -n scripts/*.sh
+run_step .venv/bin/python -m compileall backend phone_stream_cv.py
+run_step scripts/local_smoke_check.sh
+run_step scripts/local_api_smoke_check.sh
+run_step npm --prefix apps/web run lint
+run_step npm --prefix apps/web run build
+run_step git diff --check
+
+echo
+echo "final_local_review_ok"

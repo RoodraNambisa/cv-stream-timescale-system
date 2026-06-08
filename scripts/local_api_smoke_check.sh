@@ -11,8 +11,11 @@ fi
 
 .venv/bin/python - <<'PY'
 import asyncio
+import json
 import os
+import threading
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +37,8 @@ ENV_KEYS = {
     "STREAM_MODE",
     "STREAM_PROTOCOL",
     "STREAM_PUSH_URL",
+    "STREAM_RECEIVER_KIND",
+    "STREAM_RECEIVER_STATUS_URL",
     "STREAM_USERNAME",
     "STREAM_PASSWORD",
     "INFERENCE_ENDPOINT",
@@ -55,6 +60,8 @@ ENV_KEYS = {
     "REMOTE_SSH_PORT",
     "REMOTE_SSH_USER",
     "REMOTE_SSH_KEY_PATH",
+    "GRAFANA_BASE_URL",
+    "GRAFANA_DASHBOARD_URL",
 }
 
 
@@ -126,6 +133,33 @@ def assert_status(response: httpx.Response, status_code: int) -> dict[str, Any]:
     return {}
 
 
+class OptionalServiceHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/receiver/status":
+            body = b"ok"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if self.path == "/api/health":
+            body = json.dumps({"database": "ok", "version": "test"}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        return
+
+
 async def main() -> None:
     video_path = ROOT / "runtime" / "local_api_smoke_video.avi"
     spool_path = ROOT / "runtime" / "local_api_smoke_spool.db"
@@ -133,6 +167,11 @@ async def main() -> None:
         if path.exists():
             path.unlink()
     write_test_video(video_path)
+
+    optional_server = ThreadingHTTPServer(("127.0.0.1", 0), OptionalServiceHandler)
+    optional_thread = threading.Thread(target=optional_server.serve_forever, daemon=True)
+    optional_thread.start()
+    optional_base_url = f"http://127.0.0.1:{optional_server.server_port}"
 
     original_dotenv = DOTENV_PATH.read_bytes() if DOTENV_PATH.exists() else None
     original_env = {key: os.environ.get(key) for key in ENV_KEYS}
@@ -149,6 +188,8 @@ async def main() -> None:
                 "CAPTURE_TASK_ID=1",
                 "STREAM_MODE=pull",
                 "STREAM_PROTOCOL=http_mjpeg",
+                "STREAM_RECEIVER_KIND=mediamtx",
+                f"STREAM_RECEIVER_STATUS_URL={optional_base_url}/receiver/status",
                 "INFERENCE_ENDPOINT=",
                 "INFERENCE_DEVICE=cpu",
                 "INFERENCE_MODEL=yolov8n.pt",
@@ -161,6 +202,8 @@ async def main() -> None:
                 "DATABASE_BATCH_SIZE=5",
                 "DATABASE_FLUSH_INTERVAL_MS=10000",
                 f"SPOOL_SQLITE_PATH={spool_path}",
+                f"GRAFANA_BASE_URL={optional_base_url}",
+                f"GRAFANA_DASHBOARD_URL={optional_base_url}/d/api-smoke",
             ]
         )
         + "\n",
@@ -191,6 +234,13 @@ async def main() -> None:
             config = assert_status(await client.get("/api/config"), 200)
             assert config["capture"]["source_kind"] == "file", config
             assert config["database"]["configured"] is False, config
+            assert config["stream"]["receiver_kind"] == "mediamtx", config
+            assert config["observability"]["grafana_configured"] is True, config
+
+            environment = assert_status(await client.get("/api/environment"), 200)
+            checks = {item["name"]: item for item in environment["checks"]}
+            assert checks["stream_receiver"]["status"] == "ok", checks["stream_receiver"]
+            assert checks["grafana"]["status"] == "ok", checks["grafana"]
 
             update = assert_status(
                 await client.post(
@@ -286,6 +336,8 @@ async def main() -> None:
             DOTENV_PATH.unlink(missing_ok=True)
         else:
             DOTENV_PATH.write_bytes(original_dotenv)
+        optional_server.shutdown()
+        optional_thread.join(timeout=2)
         for key, value in original_env.items():
             if value is None:
                 os.environ.pop(key, None)

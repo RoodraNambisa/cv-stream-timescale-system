@@ -116,6 +116,7 @@ const lockedConfigKeys = new Set([
   'STREAM_MODE',
   'STREAM_PROTOCOL',
   'STREAM_PUSH_URL',
+  'STREAM_RECEIVER_KIND',
   'INFERENCE_ENDPOINT',
   'INFERENCE_MODEL',
   'DATABASE_URL',
@@ -147,6 +148,8 @@ const configGroups: ConfigGroup[] = [
       { key: 'STREAM_MODE', label: '流模式', input: 'select', options: ['pull', 'push'] },
       { key: 'STREAM_PROTOCOL', label: '推流协议', input: 'select', options: ['http_mjpeg', 'rtsp', 'rtmp'] },
       { key: 'STREAM_PUSH_URL', label: '推流地址', input: 'url', placeholder: 'rtmp://server/live/camera-1…' },
+      { key: 'STREAM_RECEIVER_KIND', label: '接收器类型', input: 'select', options: ['none', 'mediamtx', 'nginx_rtmp', 'custom'] },
+      { key: 'STREAM_RECEIVER_STATUS_URL', label: '接收器状态 URL', input: 'url', placeholder: 'http://server:9997/v3/config/global/get…' },
       { key: 'STREAM_USERNAME', label: '推流账号', input: 'text' },
       { key: 'STREAM_PASSWORD', label: '推流密码', input: 'password', sensitive: true },
     ],
@@ -200,6 +203,16 @@ const configGroups: ConfigGroup[] = [
       { key: 'REMOTE_SSH_PORT', label: 'SSH 管理端口', input: 'number' },
       { key: 'REMOTE_SSH_USER', label: 'SSH 管理用户', input: 'text', placeholder: '可选…' },
       { key: 'REMOTE_SSH_KEY_PATH', label: 'SSH 私钥路径', input: 'text', placeholder: '可选…' },
+    ],
+  },
+  {
+    eyebrow: 'Observability',
+    title: '可观测性',
+    icon: Gauge,
+    accent: 'accent-observe',
+    fields: [
+      { key: 'GRAFANA_BASE_URL', label: 'Grafana Base URL', input: 'url', placeholder: 'http://server:3000…' },
+      { key: 'GRAFANA_DASHBOARD_URL', label: 'Grafana 面板 URL', input: 'url', placeholder: 'http://server:3000/d/stream…' },
     ],
   },
 ]
@@ -436,7 +449,9 @@ function App() {
         <SignalCard icon={Cpu} label="推理端" check={checkFor('inference')} fallback="本地默认" />
         <SignalCard icon={Database} label="数据库" check={checkFor('database')} fallback="待检测" />
         <SignalCard icon={HardDrive} label="缓存队列" check={checkFor('spool')} fallback="待检测" />
+        <SignalCard icon={RadioTower} label="流媒体接收器" check={checkFor('stream_receiver')} fallback="可选未配置" />
         <SignalCard icon={RadioTower} label="远端 API" check={checkFor('remote_api')} fallback="可选未配置" />
+        <SignalCard icon={Gauge} label="Grafana" check={checkFor('grafana')} fallback="可选未配置" />
       </section>
 
       {activeTab === 'overview' && (
@@ -1229,6 +1244,7 @@ function buildConfigDraft(
   const database = pickObject(config, 'database')
   const spool = pickObject(config, 'spool')
   const remote = pickObject(config, 'remote')
+  const observability = pickObject(config, 'observability')
 
   return {
     CAPTURE_SOURCE_KIND: stringValue(capture.source_kind, 'http_mjpeg'),
@@ -1241,6 +1257,8 @@ function buildConfigDraft(
     STREAM_MODE: stringValue(stream.mode, 'pull'),
     STREAM_PROTOCOL: stringValue(stream.protocol, 'http_mjpeg'),
     STREAM_PUSH_URL: stringValue(stream.push_url),
+    STREAM_RECEIVER_KIND: stringValue(stream.receiver_kind, 'none'),
+    STREAM_RECEIVER_STATUS_URL: stringValue(stream.receiver_status_url),
     STREAM_USERNAME: '',
     STREAM_PASSWORD: '',
     INFERENCE_ENDPOINT: stringValue(inference.endpoint),
@@ -1262,6 +1280,8 @@ function buildConfigDraft(
     REMOTE_SSH_PORT: stringValue(remote.ssh_port, '22'),
     REMOTE_SSH_USER: stringValue(remote.ssh_user),
     REMOTE_SSH_KEY_PATH: stringValue(remote.ssh_key_path),
+    GRAFANA_BASE_URL: stringValue(observability.grafana_base_url),
+    GRAFANA_DASHBOARD_URL: stringValue(observability.grafana_dashboard_url),
   }
 }
 

@@ -147,6 +147,15 @@ http://手机IP:8080/video
 
 如果手机使用推流，配置 `STREAM_MODE=push`、`STREAM_PROTOCOL=rtmp` 或 `rtsp`，并填写 `STREAM_PUSH_URL`、账号和密码。MediaMTX 或 nginx-rtmp 可以接收 RTMP/RTSP 推流。`STREAM_PUSH_URL` 是手机发布视频的入口；`CAPTURE_SOURCE_URL` 是后端读取视频的播放地址。接收服务把发布和播放做成同一个地址时，两项可以填同一个 URL。
 
+可选流媒体接收器配置：
+
+```text
+STREAM_RECEIVER_KIND=mediamtx     # none | mediamtx | nginx_rtmp | custom
+STREAM_RECEIVER_STATUS_URL=http://SERVER_HOST:9997/v3/config/global/get
+```
+
+后端不安装 MediaMTX 或 nginx-rtmp，只检测你填写的状态 URL 是否可达。MediaMTX 常用 API 端口是 `9997`；nginx-rtmp 常见做法是开启 stat 页面，再把 stat URL 填进 `STREAM_RECEIVER_STATUS_URL`。只要接收器提供 RTSP/RTMP/HTTP 播放地址，后端就能通过 `CAPTURE_SOURCE_URL` 拉流。
+
 推理接口：
 
 ```text
@@ -191,13 +200,19 @@ cp .env.example .env
 - `CAPTURE_SOURCE_KIND`：`http_mjpeg`、`rtsp`、`rtmp`、`camera`、`file`
 - `CAPTURE_SOURCE_URL`：视频源地址
 - `STREAM_MODE`：`pull` 或 `push`
+- `STREAM_RECEIVER_KIND`：`none`、`mediamtx`、`nginx_rtmp` 或 `custom`
+- `STREAM_RECEIVER_STATUS_URL`：MediaMTX API、nginx-rtmp stat 或自定义接收器状态 URL
 - `INFERENCE_ENDPOINT`：留空时本地推理，填写后走远端推理
 - `DETECTION_CLASS_FILTER`：逗号分隔的类别白名单，留空表示不过滤
 - `ANALYSIS_TIME_RANGE_MINUTES`：分析页图表和查询的默认时间窗口
 - `DATABASE_URL`：本地或远端 PostgreSQL/TimescaleDB
 - `SPOOL_SQLITE_PATH`：SQLite 缓存路径
+- `GRAFANA_BASE_URL`：可选 Grafana 地址，环境检测会访问 `/api/health`
+- `GRAFANA_DASHBOARD_URL`：可选 Grafana 面板地址，前端配置页会保留该链接
 
 前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`REMOTE_API_BASE_URL` 是本地或前端可访问的远端 API 直连入口，环境检测会访问它的 `/api/health`。`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制服务器上 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测服务器、同步项目、安装依赖、配库、启动或停止远端 API。
+
+Grafana 是可选观测入口。React 分析页已经能展示类别分布、时间桶和统计元数据；如果你部署了 Grafana，可以让它直接读取同一个 PostgreSQL/TimescaleDB，再把 `GRAFANA_BASE_URL` 和 `GRAFANA_DASHBOARD_URL` 写入配置，环境检测会显示 Grafana 是否可达。
 
 采集运行中仍可热重载 `CONFIDENCE_THRESHOLD`、`FRAME_INTERVAL`、`CAPTURE_FPS_LIMIT`、`DETECTION_CLASS_FILTER`、`ANALYSIS_TIME_RANGE_MINUTES`、`DATABASE_BATCH_SIZE` 和 `DATABASE_FLUSH_INTERVAL_MS`。系统会继续使用启动时的视频源、推理端点、模型、数据库 URL 和 spool 路径。
 

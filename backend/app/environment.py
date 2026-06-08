@@ -211,6 +211,81 @@ async def check_remote_api(settings: Settings) -> Check:
     )
 
 
+async def check_stream_receiver(settings: Settings) -> Check:
+    receiver_kind = settings.stream_receiver_kind.strip() or "none"
+    status_url = settings.stream_receiver_status_url.strip()
+    if receiver_kind == "none" and not status_url:
+        return warn("stream_receiver", "流媒体接收器未配置")
+
+    details = {
+        "receiver_kind": receiver_kind,
+        "status_url": mask_url(status_url),
+        "stream_mode": settings.stream_mode,
+        "stream_protocol": settings.stream_protocol,
+    }
+    if not status_url:
+        return warn("stream_receiver", "流媒体接收器已标记，未配置状态 URL", details)
+
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(status_url)
+    except Exception as exc:
+        return error("stream_receiver", "流媒体接收器状态 URL 连接失败", {**details, "error": str(exc)})
+
+    if response.status_code >= 400:
+        return error(
+            "stream_receiver",
+            "流媒体接收器状态异常",
+            {**details, "status_code": response.status_code},
+        )
+
+    return ok(
+        "stream_receiver",
+        "流媒体接收器状态 URL 可达",
+        {
+            **details,
+            "status_code": response.status_code,
+            "content_type": response.headers.get("content-type", ""),
+        },
+    )
+
+
+async def check_grafana(settings: Settings) -> Check:
+    if not settings.grafana_base_url:
+        return warn("grafana", "Grafana 未配置")
+
+    base_url = settings.grafana_base_url.rstrip("/")
+    safe_url = mask_url(base_url)
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(f"{base_url}/api/health")
+    except Exception as exc:
+        return error("grafana", "Grafana 连接失败", {"url": safe_url, "error": str(exc)})
+
+    if response.status_code >= 400:
+        return error(
+            "grafana",
+            "Grafana 状态异常",
+            {"url": safe_url, "status_code": response.status_code},
+        )
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+
+    return ok(
+        "grafana",
+        "Grafana 可达",
+        {
+            "url": safe_url,
+            "dashboard_url": mask_url(settings.grafana_dashboard_url),
+            "version": payload.get("version"),
+            "database": payload.get("database"),
+        },
+    )
+
+
 def config_summary(settings: Settings) -> dict[str, Any]:
     return {
         "capture": {
@@ -226,6 +301,8 @@ def config_summary(settings: Settings) -> dict[str, Any]:
             "mode": settings.stream_mode,
             "protocol": settings.stream_protocol,
             "push_url": settings.stream_push_url,
+            "receiver_kind": settings.stream_receiver_kind,
+            "receiver_status_url": mask_url(settings.stream_receiver_status_url),
             "username_set": bool(settings.stream_username),
             "password_set": bool(settings.stream_password),
         },
@@ -264,6 +341,11 @@ def config_summary(settings: Settings) -> dict[str, Any]:
             "ssh_user": settings.remote_ssh_user,
             "ssh_key_path": settings.remote_ssh_key_path,
         },
+        "observability": {
+            "grafana_configured": bool(settings.grafana_base_url),
+            "grafana_base_url": mask_url(settings.grafana_base_url),
+            "grafana_dashboard_url": mask_url(settings.grafana_dashboard_url),
+        },
     }
 
 
@@ -277,8 +359,10 @@ async def collect_environment(settings: Settings) -> dict[str, Any]:
 
     checks.extend(await check_database(settings))
     checks.append(await check_video_source(settings))
+    checks.append(await check_stream_receiver(settings))
     checks.append(await check_inference_endpoint(settings))
     checks.append(await check_remote_api(settings))
+    checks.append(await check_grafana(settings))
 
     summary = {
         "ok": sum(1 for item in checks if item["status"] == "ok"),

@@ -20,6 +20,8 @@ EDITABLE_ENV_KEYS = {
     "STREAM_MODE",
     "STREAM_PROTOCOL",
     "STREAM_PUSH_URL",
+    "STREAM_RECEIVER_KIND",
+    "STREAM_RECEIVER_STATUS_URL",
     "STREAM_USERNAME",
     "STREAM_PASSWORD",
     "INFERENCE_ENDPOINT",
@@ -41,6 +43,8 @@ EDITABLE_ENV_KEYS = {
     "REMOTE_SSH_PORT",
     "REMOTE_SSH_USER",
     "REMOTE_SSH_KEY_PATH",
+    "GRAFANA_BASE_URL",
+    "GRAFANA_DASHBOARD_URL",
 }
 
 LOCKED_WHILE_CAPTURE_KEYS = {
@@ -49,6 +53,7 @@ LOCKED_WHILE_CAPTURE_KEYS = {
     "STREAM_MODE",
     "STREAM_PROTOCOL",
     "STREAM_PUSH_URL",
+    "STREAM_RECEIVER_KIND",
     "INFERENCE_ENDPOINT",
     "INFERENCE_MODEL",
     "DATABASE_URL",
@@ -71,6 +76,8 @@ class Settings(BaseSettings):
     stream_mode: str = "pull"
     stream_protocol: str = "http_mjpeg"
     stream_push_url: str = ""
+    stream_receiver_kind: str = "none"
+    stream_receiver_status_url: str = ""
     stream_username: str = ""
     stream_password: str = ""
 
@@ -96,6 +103,9 @@ class Settings(BaseSettings):
     remote_ssh_port: int = 22
     remote_ssh_user: str = ""
     remote_ssh_key_path: str = ""
+
+    grafana_base_url: str = ""
+    grafana_dashboard_url: str = ""
 
     model_config = SettingsConfigDict(
         env_file=DOTENV_PATH,

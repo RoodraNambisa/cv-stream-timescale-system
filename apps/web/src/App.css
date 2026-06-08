@@ -395,7 +395,7 @@ h2 {
 
 .signal-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -522,6 +522,10 @@ h2 {
 
 .accent-remote {
   border-top-color: #1c2d49;
+}
+
+.accent-observe {
+  border-top-color: #6f7f11;
 }
 
 .full-config {
