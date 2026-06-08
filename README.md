@@ -95,7 +95,15 @@ POST /api/capture/start
 POST /api/capture/stop
 ```
 
-启动任务后，系统锁定数据库 URL、视频源 URL、推流 URL、推理端点、模型路径和 spool 路径。置信度、帧间隔、FPS 限制和批量写入大小来自当前配置。
+启动任务后，系统锁定数据库 URL、视频源 URL、推流 URL、推理端点、模型路径和 spool 路径。置信度、帧间隔、FPS 限制、类别过滤和批量写入大小来自当前配置。状态接口会返回最近检测快照，前端首屏用它显示实时类别和置信度。
+
+分析接口：
+
+```text
+GET /api/analysis/summary
+```
+
+该接口按 `ANALYSIS_TIME_RANGE_MINUTES` 和 `DETECTION_CLASS_FILTER` 查询 TimescaleDB，返回类别分布、10 秒时间桶和最近写入记录。数据库未配置时返回 `skipped`，前端仍显示当前窗口和过滤条件。
 
 视频源和推流配置：
 

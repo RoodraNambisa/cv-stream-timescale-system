@@ -229,6 +229,20 @@ h2 {
   background: #f3b23f;
 }
 
+.stage-empty {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: #dbe9ff;
+  background: rgba(7, 15, 27, 0.68);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .frame-footer {
   position: absolute;
   z-index: 1;

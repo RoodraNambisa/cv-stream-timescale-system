@@ -39,6 +39,20 @@ export type InferenceStatus = {
   details: Record<string, unknown>
 }
 
+export type DetectionSnapshot = {
+  time: string
+  object_class: string
+  confidence: number
+  bbox_x1?: number | null
+  bbox_y1?: number | null
+  bbox_x2?: number | null
+  bbox_y2?: number | null
+  bbox_center_x?: number | null
+  bbox_center_y?: number | null
+  frame_index?: number | null
+  inference_device?: string
+}
+
 export type CaptureStatus = {
   status: string
   message: string
@@ -50,6 +64,26 @@ export type CaptureStatus = {
   detections_queued: number
   last_error: string | null
   settings_locked: Record<string, unknown>
+  recent_detections: DetectionSnapshot[]
+}
+
+export type AnalysisSummary = {
+  status: string
+  message: string
+  window_minutes: number
+  class_filter: string[]
+  top_classes: Array<{
+    object_class: string
+    detection_count: number
+    avg_confidence: number
+  }>
+  buckets: Array<{
+    bucket: string
+    detection_count: number
+    avg_confidence: number
+  }>
+  recent: DetectionSnapshot[]
+  error?: string
 }
 
 export type ActionResponse = {
@@ -113,6 +147,10 @@ export async function fetchInferenceStatus(): Promise<InferenceStatus> {
 
 export async function fetchCaptureStatus(): Promise<CaptureStatus> {
   return readJson('/api/capture/status')
+}
+
+export async function fetchAnalysisSummary(): Promise<AnalysisSummary> {
+  return readJson('/api/analysis/summary')
 }
 
 export async function reloadConfig(): Promise<ActionResponse> {

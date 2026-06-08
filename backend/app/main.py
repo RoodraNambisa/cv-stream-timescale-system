@@ -4,6 +4,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError
 
+from .analysis import analysis_summary
 from .capture import CaptureManager, CaptureStartRequest
 from .config import LOCKED_WHILE_CAPTURE_KEYS, get_settings, reload_settings, update_dotenv
 from .detections import DetectionBatch, DetectionRecord
@@ -128,6 +129,11 @@ async def ingest_detection_batch(batch: DetectionBatch) -> dict:
 @app.get("/api/spool/status")
 async def spool_status() -> dict:
     return await spool.status(get_settings())
+
+
+@app.get("/api/analysis/summary")
+async def get_analysis_summary() -> dict:
+    return await analysis_summary(get_settings())
 
 
 @app.post("/api/spool/flush")

@@ -35,6 +35,7 @@ class CaptureState:
     detections_queued: int = 0
     last_error: str | None = None
     settings_locked: dict[str, Any] = field(default_factory=dict)
+    recent_detections: list[dict[str, Any]] = field(default_factory=list)
 
 
 class CaptureManager:
@@ -263,6 +264,7 @@ class CaptureManager:
         if records:
             await self._spool.enqueue(records, settings)
             await self._bump_counter("detections_queued", len(records))
+            await self._remember_detections(records)
 
         await self._update_state(
             message=f"推理完成，检测到 {len(records)} 个目标",
@@ -280,6 +282,14 @@ class CaptureManager:
             current_value = getattr(self._state, name)
             setattr(self._state, name, current_value + count)
 
+    async def _remember_detections(self, records: list[DetectionRecord]) -> None:
+        snapshots = [_record_snapshot(record) for record in records]
+        async with self._lock:
+            self._state.recent_detections = [
+                *snapshots,
+                *self._state.recent_detections,
+            ][:12]
+
     async def _replace_state(self, **updates: Any) -> None:
         async with self._lock:
             current = self._state
@@ -294,6 +304,7 @@ class CaptureManager:
                 detections_queued=updates.get("detections_queued", current.detections_queued),
                 last_error=updates.get("last_error", current.last_error),
                 settings_locked=updates.get("settings_locked", current.settings_locked),
+                recent_detections=updates.get("recent_detections", current.recent_detections),
             )
 
     async def _update_state(self, **updates: Any) -> None:
@@ -313,6 +324,7 @@ class CaptureManager:
             "detections_queued": self._state.detections_queued,
             "last_error": self._state.last_error,
             "settings_locked": self._state.settings_locked,
+            "recent_detections": self._state.recent_detections,
         }
 
 
@@ -407,6 +419,22 @@ def _float_or_none(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _record_snapshot(record: DetectionRecord) -> dict[str, Any]:
+    return {
+        "time": record.time.isoformat(),
+        "object_class": record.object_class,
+        "confidence": record.confidence,
+        "bbox_x1": record.bbox_x1,
+        "bbox_y1": record.bbox_y1,
+        "bbox_x2": record.bbox_x2,
+        "bbox_y2": record.bbox_y2,
+        "bbox_center_x": record.bbox_center_x,
+        "bbox_center_y": record.bbox_center_y,
+        "frame_index": record.frame_index,
+        "inference_device": record.inference_device,
+    }
 
 
 def _isoformat(value: datetime | None) -> str | None:

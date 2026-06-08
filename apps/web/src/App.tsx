@@ -25,15 +25,18 @@ import {
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  type AnalysisSummary,
   type CaptureStatus,
   type CheckStatus,
   type ConfigValue,
+  type DetectionSnapshot,
   type EnvironmentCheck,
   type InferenceStatus,
   type RemoteAction,
   type SpoolStatus,
   type VideoConfig,
   fetchCaptureStatus,
+  fetchAnalysisSummary,
   fetchEnvironment,
   fetchHealth,
   fetchInferenceStatus,
@@ -250,6 +253,12 @@ function App() {
     refetchInterval: 3_000,
   })
 
+  const analysis = useQuery({
+    queryKey: ['analysis-summary'],
+    queryFn: fetchAnalysisSummary,
+    refetchInterval: 10_000,
+  })
+
   const reloadMutation = useMutation({
     mutationFn: reloadConfig,
     onSuccess: () => queryClient.invalidateQueries(),
@@ -303,6 +312,14 @@ function App() {
   const spoolChart = spool.data
     ? Object.entries(spool.data.counts).map(([name, value]) => ({ name, value }))
     : []
+  const topClassChart = analysis.data?.top_classes.map((item) => ({
+    name: item.object_class,
+    value: item.detection_count,
+  })) ?? []
+  const bucketChart = analysis.data?.buckets.map((item) => ({
+    name: formatBucketLabel(item.bucket),
+    value: item.detection_count,
+  })) ?? []
 
   function checkFor(name: string): EnvironmentCheck | undefined {
     return environmentChecks.get(name)
@@ -385,6 +402,7 @@ function App() {
           checks={environment.data?.checks ?? []}
           summaryChart={summaryChart}
           spoolChart={spoolChart}
+          analysisSummary={analysis.data}
           captureStatus={capture.data}
         />
       )}
@@ -427,8 +445,9 @@ function App() {
       {activeTab === 'analysis' && (
         <AnalysisPage
           config={environment.data?.config}
-          summaryChart={summaryChart}
-          spoolChart={spoolChart}
+          analysisSummary={analysis.data}
+          topClassChart={topClassChart}
+          bucketChart={bucketChart}
         />
       )}
     </main>
@@ -451,6 +470,9 @@ function FrameConsole({
   const frameNumber = String(captureStatus?.frames_read ?? 0).padStart(6, '0')
   const model = String(pickObject(config, 'inference').model || 'yolov8n.pt')
   const tone = toneFromRuntime(captureStatus?.status)
+  const recentDetections = captureStatus?.recent_detections ?? []
+  const primaryDetection = recentDetections[0]
+  const secondaryDetection = recentDetections[1]
 
   return (
     <section className="frame-console panel">
@@ -475,12 +497,18 @@ function FrameConsole({
           <span>MODEL</span>
           <strong>{model}</strong>
         </div>
-        <div className="bbox bbox-primary">
-          <span>person 0.91</span>
-        </div>
-        <div className="bbox bbox-secondary">
-          <span>vehicle 0.74</span>
-        </div>
+        {primaryDetection ? (
+          <div className="bbox bbox-primary">
+            <span>{formatDetectionLabel(primaryDetection)}</span>
+          </div>
+        ) : (
+          <div className="stage-empty">等待检测结果</div>
+        )}
+        {secondaryDetection && (
+          <div className="bbox bbox-secondary">
+            <span>{formatDetectionLabel(secondaryDetection)}</span>
+          </div>
+        )}
         <div className="frame-footer">
           <span>{inferenceStatus?.message ?? '推理状态检测中'}</span>
           <span>{captureStatus?.detections_queued ?? 0} queued</span>
@@ -563,13 +591,17 @@ function OverviewPage({
   checks,
   summaryChart,
   spoolChart,
+  analysisSummary,
   captureStatus,
 }: {
   checks: EnvironmentCheck[]
   summaryChart: Array<{ name: CheckStatus; value: number }>
   spoolChart: Array<{ name: string; value: number }>
+  analysisSummary?: AnalysisSummary
   captureStatus?: CaptureStatus
 }) {
+  const recentDetections = captureStatus?.recent_detections ?? []
+
   return (
     <section className="workspace">
       <div className="panel primary-panel">
@@ -578,7 +610,7 @@ function OverviewPage({
           <Metric label="读取帧" value={captureStatus?.frames_read ?? 0} />
           <Metric label="推理帧" value={captureStatus?.frames_inferred ?? 0} />
           <Metric label="入队检测" value={captureStatus?.detections_queued ?? 0} />
-          <Metric label="队列状态" value={captureStatus?.status ?? 'idle'} />
+          <Metric label="最近检测" value={recentDetections.length} />
         </div>
       </div>
 
@@ -633,6 +665,11 @@ function OverviewPage({
             <Bar dataKey="value" fill="#2f6fed" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+      </div>
+
+      <div className="panel full-span">
+        <PanelHeading eyebrow="Recent" title="最近检测快照" icon={ScanLine} compact />
+        <DetectionTable detections={recentDetections} emptyText={analysisSummary?.message ?? '暂无检测记录'} />
       </div>
     </section>
   )
@@ -915,17 +952,20 @@ function TasksPage({
 
 function AnalysisPage({
   config,
-  summaryChart,
-  spoolChart,
+  analysisSummary,
+  topClassChart,
+  bucketChart,
 }: {
   config?: Record<string, unknown>
-  summaryChart: Array<{ name: CheckStatus; value: number }>
-  spoolChart: Array<{ name: string; value: number }>
+  analysisSummary?: AnalysisSummary
+  topClassChart: Array<{ name: string; value: number }>
+  bucketChart: Array<{ name: string; value: number }>
 }) {
   const inference = pickObject(config, 'inference')
   const analysis = pickObject(config, 'analysis')
   const classFilter = String(inference.class_filter || '全部类别')
   const timeRange = Number(analysis.time_range_minutes || 30)
+  const recent = analysisSummary?.recent ?? []
 
   return (
     <section className="workspace">
@@ -934,7 +974,14 @@ function AnalysisPage({
         <div className="metric-grid analysis-settings">
           <Metric label="时间范围" value={`${timeRange} 分钟`} />
           <Metric label="类别过滤" value={classFilter} />
+          <Metric label="查询状态" value={analysisSummary?.status ?? 'loading'} />
+          <Metric label="最近记录" value={recent.length} />
         </div>
+        {analysisSummary?.status !== 'ok' && (
+          <div className={`notice ${analysisSummary?.status === 'error' ? 'error' : 'warn'}`}>
+            {analysisSummary?.message ?? '等待分析数据'}
+          </div>
+        )}
         <ol className="query-list">
           {analysisQueries.map((query) => (
             <li key={query}>{query}</li>
@@ -943,23 +990,22 @@ function AnalysisPage({
       </div>
 
       <aside className="panel side-panel">
-        <PanelHeading eyebrow="Health" title="检测状态" icon={ShieldCheck} compact />
+        <PanelHeading eyebrow="Top Classes" title="类别分布" icon={ShieldCheck} compact />
         <ResponsiveContainer width="100%" height={176}>
-          <PieChart>
-            <Pie data={summaryChart} dataKey="value" nameKey="name" innerRadius={50} outerRadius={72}>
-              {summaryChart.map((entry) => (
-                <Cell fill={statusColors[entry.name]} key={entry.name} />
-              ))}
-            </Pie>
+          <BarChart data={topClassChart}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis allowDecimals={false} />
             <Tooltip />
-          </PieChart>
+            <Bar dataKey="value" fill="#0f9f77" radius={[4, 4, 0, 0]} />
+          </BarChart>
         </ResponsiveContainer>
       </aside>
 
       <div className="panel full-span">
-        <PanelHeading eyebrow="Queue" title="写库状态" icon={Database} compact />
+        <PanelHeading eyebrow="Timeline" title="检测时间桶" icon={Database} compact />
         <ResponsiveContainer width="100%" height={210}>
-          <BarChart data={spoolChart}>
+          <BarChart data={bucketChart}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="name" />
             <YAxis allowDecimals={false} />
@@ -968,7 +1014,49 @@ function AnalysisPage({
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      <div className="panel full-span">
+        <PanelHeading eyebrow="Recent" title="最近写入记录" icon={ListChecks} compact />
+        <DetectionTable detections={recent} emptyText={analysisSummary?.message ?? '暂无数据库记录'} />
+      </div>
     </section>
+  )
+}
+
+function DetectionTable({
+  detections,
+  emptyText,
+}: {
+  detections: DetectionSnapshot[]
+  emptyText: string
+}) {
+  if (!detections.length) {
+    return <div className="notice warn">{emptyText}</div>
+  }
+
+  return (
+    <table className="data-table detection-table">
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>类别</th>
+          <th>置信度</th>
+          <th>帧</th>
+          <th>推理端</th>
+        </tr>
+      </thead>
+      <tbody>
+        {detections.map((item, index) => (
+          <tr key={`${item.time}-${item.object_class}-${index}`}>
+            <td>{formatDateTime(item.time)}</td>
+            <td>{item.object_class}</td>
+            <td>{formatConfidence(item.confidence)}</td>
+            <td>{item.frame_index ?? '-'}</td>
+            <td>{item.inference_device ?? '-'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 
@@ -1171,6 +1259,33 @@ function formatValue(value: unknown): string {
     return JSON.stringify(value)
   }
   return String(value)
+}
+
+function formatDetectionLabel(detection: DetectionSnapshot): string {
+  return `${detection.object_class} ${formatConfidence(detection.confidence)}`
+}
+
+function formatConfidence(value: number | undefined): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return '-'
+  }
+  return value.toFixed(2)
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString()
+}
+
+function formatBucketLabel(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 function toneFromRuntime(status?: string): CheckStatus {
