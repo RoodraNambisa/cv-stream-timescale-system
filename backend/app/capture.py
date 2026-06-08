@@ -1,0 +1,406 @@
+from __future__ import annotations
+
+import asyncio
+import importlib.util
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
+
+from .config import Settings, get_settings
+from .detections import DetectionRecord, utc_now
+from .inference import infer_image_bytes
+from .spool import DetectionSpool
+from .video import resolve_video_source, set_capture_timeout
+
+
+class CaptureStartRequest(BaseModel):
+    max_frames: Optional[int] = Field(default=None, ge=1)
+    frame_interval: Optional[int] = Field(default=None, ge=1)
+    device_id: Optional[int] = Field(default=None, ge=1)
+    task_id: Optional[int] = Field(default=None, ge=1)
+
+
+@dataclass
+class CaptureState:
+    status: str = "stopped"
+    message: str = "采集任务未启动"
+    started_at: datetime | None = None
+    stopped_at: datetime | None = None
+    last_frame_at: datetime | None = None
+    frames_read: int = 0
+    frames_inferred: int = 0
+    detections_queued: int = 0
+    last_error: str | None = None
+    settings_locked: dict[str, Any] = field(default_factory=dict)
+
+
+class CaptureManager:
+    def __init__(self, spool: DetectionSpool) -> None:
+        self._spool = spool
+        self._lock = asyncio.Lock()
+        self._state = CaptureState()
+        self._task: asyncio.Task | None = None
+        self._stop_event: asyncio.Event | None = None
+
+    async def start(self, request: CaptureStartRequest | None = None) -> dict[str, Any]:
+        request = request or CaptureStartRequest()
+        settings = get_settings()
+
+        if importlib.util.find_spec("cv2") is None:
+            await self._replace_state(
+                status="error",
+                message="OpenCV 未安装，无法启动采集",
+                stopped_at=utc_now(),
+                last_error="opencv_not_installed",
+            )
+            return {
+                "status": "error",
+                "message": "OpenCV 未安装，无法启动采集",
+                "capture": await self.status(),
+            }
+
+        source = resolve_video_source(settings)
+        if source is None:
+            await self._replace_state(
+                status="error",
+                message="视频源未配置",
+                stopped_at=utc_now(),
+                last_error="capture_source_not_configured",
+            )
+            return {
+                "status": "error",
+                "message": "视频源未配置",
+                "capture": await self.status(),
+            }
+
+        async with self._lock:
+            if self._task is not None and not self._task.done():
+                return {
+                    "status": "running",
+                    "message": "采集任务已在运行",
+                    "capture": self._snapshot_locked(),
+                }
+
+            locked_settings = _locked_settings(settings, request, source)
+            self._state = CaptureState(
+                status="running",
+                message="采集任务已启动",
+                started_at=utc_now(),
+                stopped_at=None,
+                settings_locked=locked_settings,
+            )
+            self._stop_event = asyncio.Event()
+            self._task = asyncio.create_task(
+                self._run(settings, request, source, self._stop_event)
+            )
+
+            return {
+                "status": "ok",
+                "message": "采集任务已启动",
+                "capture": self._snapshot_locked(),
+            }
+
+    async def stop(self) -> dict[str, Any]:
+        async with self._lock:
+            if self._task is None or self._task.done():
+                self._state.status = "stopped"
+                self._state.message = "采集任务未运行"
+                self._state.stopped_at = self._state.stopped_at or utc_now()
+                return {
+                    "status": "idle",
+                    "message": "采集任务未运行",
+                    "capture": self._snapshot_locked(),
+                }
+
+            self._state.status = "stopping"
+            self._state.message = "正在停止采集任务"
+            task = self._task
+            if self._stop_event is not None:
+                self._stop_event.set()
+
+        try:
+            await asyncio.wait_for(task, timeout=5)
+        except asyncio.TimeoutError:
+            return {
+                "status": "stopping",
+                "message": "采集任务仍在停止中",
+                "capture": await self.status(),
+            }
+
+        return {
+            "status": "ok",
+            "message": "采集任务已停止",
+            "capture": await self.status(),
+        }
+
+    async def status(self) -> dict[str, Any]:
+        async with self._lock:
+            return self._snapshot_locked()
+
+    async def shutdown(self) -> None:
+        async with self._lock:
+            task = self._task
+            if self._stop_event is not None:
+                self._stop_event.set()
+
+        if task is None or task.done():
+            return
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async def _run(
+        self,
+        settings: Settings,
+        request: CaptureStartRequest,
+        source: str | int,
+        stop_event: asyncio.Event,
+    ) -> None:
+        import cv2
+
+        capture = cv2.VideoCapture()
+        set_capture_timeout(capture, cv2, 3000)
+        opened = await asyncio.to_thread(capture.open, source)
+        if not opened:
+            await self._replace_state(
+                status="error",
+                message="视频源打开失败",
+                stopped_at=utc_now(),
+                last_error=f"open_failed:{source}",
+            )
+            await asyncio.to_thread(capture.release)
+            return
+
+        frame_interval = max(request.frame_interval or settings.frame_interval, 1)
+        fps_sleep_seconds = 0.0
+        if settings.capture_fps_limit > 0:
+            fps_sleep_seconds = 1 / settings.capture_fps_limit
+
+        consecutive_read_failures = 0
+
+        try:
+            while not stop_event.is_set():
+                if request.max_frames is not None and self._state.frames_read >= request.max_frames:
+                    await self._update_state(message="已达到本次采集帧数上限")
+                    break
+
+                ok, frame = await asyncio.to_thread(capture.read)
+                if not ok or frame is None:
+                    consecutive_read_failures += 1
+                    if settings.capture_source_kind == "file":
+                        await self._update_state(message="视频文件读取结束")
+                        break
+                    if consecutive_read_failures >= 25:
+                        await self._replace_state(
+                            status="error",
+                            message="连续读取视频帧失败",
+                            stopped_at=utc_now(),
+                            last_error="read_frame_failed",
+                        )
+                        return
+                    await asyncio.sleep(0.2)
+                    continue
+
+                consecutive_read_failures = 0
+                frame_index = await self._bump_frame_read()
+
+                if frame_index % frame_interval == 0:
+                    await self._infer_and_enqueue(settings, request, frame, frame_index)
+
+                if fps_sleep_seconds > 0:
+                    await asyncio.sleep(fps_sleep_seconds)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._replace_state(
+                status="error",
+                message="采集任务异常退出",
+                stopped_at=utc_now(),
+                last_error=str(exc),
+            )
+            return
+        finally:
+            await asyncio.to_thread(capture.release)
+
+        await self._replace_state(
+            status="stopped",
+            message="采集任务已停止",
+            stopped_at=utc_now(),
+        )
+
+    async def _infer_and_enqueue(
+        self,
+        settings: Settings,
+        request: CaptureStartRequest,
+        frame: Any,
+        frame_index: int,
+    ) -> None:
+        image_bytes = await asyncio.to_thread(_encode_jpeg, frame)
+        if image_bytes is None:
+            await self._update_state(last_error="frame_encode_failed")
+            return
+
+        result = await infer_image_bytes(settings, image_bytes, f"frame-{frame_index}.jpg")
+        await self._bump_counter("frames_inferred", 1)
+
+        if result.get("status") != "ok":
+            await self._update_state(
+                message=str(result.get("message") or "推理失败"),
+                last_error=str(result.get("message") or result),
+            )
+            return
+
+        records = _detections_to_records(settings, request, result, frame_index)
+        if records:
+            await self._spool.enqueue(records, settings)
+            await self._bump_counter("detections_queued", len(records))
+
+        await self._update_state(
+            message=f"推理完成，检测到 {len(records)} 个目标",
+            last_error=None,
+        )
+
+    async def _bump_frame_read(self) -> int:
+        async with self._lock:
+            self._state.frames_read += 1
+            self._state.last_frame_at = utc_now()
+            return self._state.frames_read
+
+    async def _bump_counter(self, name: str, count: int) -> None:
+        async with self._lock:
+            current_value = getattr(self._state, name)
+            setattr(self._state, name, current_value + count)
+
+    async def _replace_state(self, **updates: Any) -> None:
+        async with self._lock:
+            current = self._state
+            self._state = CaptureState(
+                status=updates.get("status", current.status),
+                message=updates.get("message", current.message),
+                started_at=updates.get("started_at", current.started_at),
+                stopped_at=updates.get("stopped_at", current.stopped_at),
+                last_frame_at=updates.get("last_frame_at", current.last_frame_at),
+                frames_read=updates.get("frames_read", current.frames_read),
+                frames_inferred=updates.get("frames_inferred", current.frames_inferred),
+                detections_queued=updates.get("detections_queued", current.detections_queued),
+                last_error=updates.get("last_error", current.last_error),
+                settings_locked=updates.get("settings_locked", current.settings_locked),
+            )
+
+    async def _update_state(self, **updates: Any) -> None:
+        async with self._lock:
+            for key, value in updates.items():
+                setattr(self._state, key, value)
+
+    def _snapshot_locked(self) -> dict[str, Any]:
+        return {
+            "status": self._state.status,
+            "message": self._state.message,
+            "started_at": _isoformat(self._state.started_at),
+            "stopped_at": _isoformat(self._state.stopped_at),
+            "last_frame_at": _isoformat(self._state.last_frame_at),
+            "frames_read": self._state.frames_read,
+            "frames_inferred": self._state.frames_inferred,
+            "detections_queued": self._state.detections_queued,
+            "last_error": self._state.last_error,
+            "settings_locked": self._state.settings_locked,
+        }
+
+
+def _locked_settings(
+    settings: Settings,
+    request: CaptureStartRequest,
+    source: str | int,
+) -> dict[str, Any]:
+    return {
+        "source_kind": settings.capture_source_kind,
+        "source": str(source),
+        "fps_limit": settings.capture_fps_limit,
+        "frame_interval": request.frame_interval or settings.frame_interval,
+        "device_id": request.device_id or settings.capture_device_id,
+        "task_id": request.task_id or settings.capture_task_id,
+        "inference_mode": "remote" if settings.inference_endpoint else "local",
+        "inference_endpoint": settings.inference_endpoint,
+        "inference_model": settings.inference_model,
+        "database_configured": bool(settings.database_url),
+        "spool_sqlite_path": str(settings.spool_sqlite_path),
+    }
+
+
+def _encode_jpeg(frame: Any) -> bytes | None:
+    import cv2
+
+    ok, buffer = cv2.imencode(".jpg", frame)
+    if not ok:
+        return None
+    return buffer.tobytes()
+
+
+def _detections_to_records(
+    settings: Settings,
+    request: CaptureStartRequest,
+    result: dict[str, Any],
+    frame_index: int,
+) -> list[DetectionRecord]:
+    detections = result.get("detections")
+    if not isinstance(detections, list):
+        return []
+
+    observed_at = utc_now()
+    records: list[DetectionRecord] = []
+
+    for detection in detections:
+        if not isinstance(detection, dict):
+            continue
+
+        confidence = _float_or_none(detection.get("confidence"))
+        if confidence is None or confidence < settings.confidence_threshold or confidence > 1:
+            continue
+
+        object_class = (
+            detection.get("object_class")
+            or detection.get("class_name")
+            or detection.get("label")
+            or detection.get("class")
+            or "unknown"
+        )
+        records.append(
+            DetectionRecord(
+                time=observed_at,
+                device_id=request.device_id or settings.capture_device_id,
+                task_id=request.task_id or settings.capture_task_id,
+                object_class=str(object_class),
+                confidence=confidence,
+                bbox_x1=_float_or_none(detection.get("bbox_x1")),
+                bbox_y1=_float_or_none(detection.get("bbox_y1")),
+                bbox_x2=_float_or_none(detection.get("bbox_x2")),
+                bbox_y2=_float_or_none(detection.get("bbox_y2")),
+                bbox_center_x=_float_or_none(detection.get("bbox_center_x")),
+                bbox_center_y=_float_or_none(detection.get("bbox_center_y")),
+                frame_index=frame_index,
+                source_kind=settings.capture_source_kind,
+                inference_device=str(result.get("mode") or settings.inference_device),
+            )
+        )
+
+    return records
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _isoformat(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
