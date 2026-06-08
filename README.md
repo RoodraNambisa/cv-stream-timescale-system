@@ -120,6 +120,7 @@ GET /api/analysis/summary
 ```
 
 该接口按 `ANALYSIS_TIME_RANGE_MINUTES` 和 `DETECTION_CLASS_FILTER` 查询 TimescaleDB，返回类别分布、10 秒时间桶和最近写入记录。数据库未配置时返回 `skipped`，前端仍显示当前窗口和过滤条件。
+接口还会返回 `cv_result_meta` 的分钟级统计元数据，前端分析页用它展示任务、类别、平均置信度和检测数量。
 
 视频源和推流配置：
 

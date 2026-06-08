@@ -2,6 +2,26 @@
   width: min(1240px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 22px 0 42px;
+  scroll-margin-top: 20px;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 20;
+  left: 16px;
+  top: 16px;
+  transform: translateY(-140%);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #ffffff;
+  background: #1c2d49;
+  text-decoration: none;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 
 .command-bar {
@@ -43,6 +63,7 @@ h1 {
   font-size: 34px;
   line-height: 1.08;
   letter-spacing: 0;
+  text-wrap: balance;
 }
 
 h2 {
@@ -50,6 +71,7 @@ h2 {
   font-size: 18px;
   line-height: 1.2;
   letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .top-actions {
@@ -555,8 +577,8 @@ h2 {
   text-overflow: ellipsis;
 }
 
-.config-field input:focus,
-.config-field select:focus {
+.config-field input:focus-visible,
+.config-field select:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 1px;
   border-color: var(--blue);
@@ -641,6 +663,7 @@ h2 {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 
 .data-table th,
@@ -649,6 +672,11 @@ h2 {
   padding: 11px 10px;
   text-align: left;
   vertical-align: top;
+}
+
+.metric strong,
+.frame-meta strong {
+  font-variant-numeric: tabular-nums;
 }
 
 .data-table th {
@@ -829,6 +857,23 @@ h2 {
 
   to {
     background-position: 0 330px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skip-link,
+  .video-stage::after {
+    animation: none;
+    transform: none;
+  }
+
+  .skip-link {
+    top: 16px;
+    transform: translateY(-140%);
+  }
+
+  .skip-link:focus-visible {
+    transform: translateY(0);
   }
 }
 

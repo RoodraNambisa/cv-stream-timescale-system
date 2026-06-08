@@ -13,12 +13,14 @@ fi
 import asyncio
 import json
 import threading
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import cv2
 import numpy as np
 
+import backend.app.analysis as analysis_module
 from backend.app.analysis import analysis_summary
 from backend.app.environment import check_remote_api
 import backend.app.capture as capture_module
@@ -109,6 +111,48 @@ class FakePgConnection:
         self.closed = True
 
 
+class FakeAnalysisConnection:
+    def __init__(self):
+        self.queries = []
+        self.closed = False
+
+    async def fetch(self, sql, *args):
+        self.queries.append(sql)
+        if "FROM cv_result_meta" in sql:
+            return [
+                {
+                    "stat_time": records_time(),
+                    "task_id": 1,
+                    "object_class": "person",
+                    "avg_confidence": 0.82,
+                    "total_count": 3,
+                    "stat_window_seconds": 60,
+                }
+            ]
+        if "GROUP BY object_class" in sql:
+            return [{"object_class": "person", "detection_count": 3, "avg_confidence": 0.82}]
+        if "time_bucket('10 seconds'" in sql:
+            return [{"bucket": records_time(), "detection_count": 3, "avg_confidence": 0.82}]
+        return [
+            {
+                "time": records_time(),
+                "device_id": 1,
+                "task_id": 1,
+                "object_class": "person",
+                "confidence": 0.82,
+                "frame_index": 1,
+                "inference_device": "local-smoke",
+            }
+        ]
+
+    async def close(self):
+        self.closed = True
+
+
+def records_time():
+    return datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+
+
 async def main() -> None:
     spool_path = Path("runtime/local_smoke_spool.db")
     alternate_spool_path = Path("runtime/local_smoke_spool_alt.db")
@@ -184,6 +228,27 @@ async def main() -> None:
         summary = await analysis_summary(settings)
         assert summary["status"] == "skipped", summary
         assert summary["class_filter"] == ["person"], summary
+        assert summary["result_meta"] == [], summary
+
+        fake_analysis_connection = FakeAnalysisConnection()
+
+        async def fake_analysis_connect(*args, **kwargs):
+            return fake_analysis_connection
+
+        original_analysis_connect = analysis_module.asyncpg.connect
+        analysis_module.asyncpg.connect = fake_analysis_connect
+        try:
+            analysis_settings = settings.model_copy(
+                update={"database_url": "postgresql://cv_user:password@127.0.0.1:5432/cv_stream"}
+            )
+            analysis_ok = await analysis_summary(analysis_settings)
+            assert analysis_ok["status"] == "ok", analysis_ok
+            assert analysis_ok["result_meta"][0]["object_class"] == "person", analysis_ok
+            assert analysis_ok["result_meta"][0]["total_count"] == 3, analysis_ok
+            assert fake_analysis_connection.closed is True, fake_analysis_connection.queries
+            assert len(fake_analysis_connection.queries) == 4, fake_analysis_connection.queries
+        finally:
+            analysis_module.asyncpg.connect = original_analysis_connect
 
         remote_api_missing = await check_remote_api(settings)
         assert remote_api_missing["status"] == "warn", remote_api_missing

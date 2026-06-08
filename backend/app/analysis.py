@@ -16,6 +16,7 @@ async def analysis_summary(settings: Settings) -> dict[str, Any]:
         "class_filter": class_filter,
         "top_classes": [],
         "buckets": [],
+        "result_meta": [],
         "recent": [],
     }
 
@@ -42,6 +43,7 @@ async def analysis_summary(settings: Settings) -> dict[str, Any]:
     try:
         top_classes = await _fetch_top_classes(connection, window_minutes, class_filter)
         buckets = await _fetch_time_buckets(connection, window_minutes, class_filter)
+        result_meta = await _fetch_result_meta(connection, window_minutes, class_filter)
         recent = await _fetch_recent(connection, window_minutes, class_filter)
     except Exception as exc:
         return {
@@ -60,6 +62,7 @@ async def analysis_summary(settings: Settings) -> dict[str, Any]:
         "class_filter": class_filter,
         "top_classes": [_row_to_plain(row) for row in top_classes],
         "buckets": [_row_to_plain(row) for row in buckets],
+        "result_meta": [_row_to_plain(row) for row in result_meta],
         "recent": [_row_to_plain(row) for row in recent],
     }
 
@@ -129,6 +132,31 @@ async def _fetch_recent(
         WHERE time >= now() - ($1::int * INTERVAL '1 minute')
           AND ($2::text[] IS NULL OR lower(object_class) = ANY($2::text[]))
         ORDER BY time DESC
+        LIMIT 20
+        """,
+        window_minutes,
+        class_filter or None,
+    )
+
+
+async def _fetch_result_meta(
+    connection: asyncpg.Connection,
+    window_minutes: int,
+    class_filter: list[str],
+) -> list[asyncpg.Record]:
+    return await connection.fetch(
+        """
+        SELECT
+          stat_time,
+          task_id,
+          object_class,
+          round(avg_confidence::numeric, 4)::float AS avg_confidence,
+          total_count,
+          stat_window_seconds
+        FROM cv_result_meta
+        WHERE stat_time >= now() - ($1::int * INTERVAL '1 minute')
+          AND ($2::text[] IS NULL OR lower(object_class) = ANY($2::text[]))
+        ORDER BY stat_time DESC, total_count DESC, object_class
         LIMIT 20
         """,
         window_minutes,

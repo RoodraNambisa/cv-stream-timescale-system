@@ -83,6 +83,14 @@ export type AnalysisSummary = {
     detection_count: number
     avg_confidence: number
   }>
+  result_meta: Array<{
+    stat_time: string
+    task_id: number
+    object_class: string
+    avg_confidence: number
+    total_count: number
+    stat_window_seconds: number
+  }>
   recent: DetectionSnapshot[]
   error?: string
 }
@@ -108,7 +116,7 @@ async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
 
   if (!response.ok) {
-    let detail = `${url} failed: ${response.status}`
+    let detail: string
     try {
       const body = await response.json()
       detail =

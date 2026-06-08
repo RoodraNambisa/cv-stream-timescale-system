@@ -26,6 +26,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   type AnalysisSummary,
+  type ActionResponse,
   type CaptureStatus,
   type CheckStatus,
   type ConfigValue,
@@ -92,7 +93,7 @@ const statusColors: Record<CheckStatus, string> = {
 type ConfigField = {
   key: string
   label: string
-  input: 'text' | 'number' | 'password' | 'select'
+  input: 'text' | 'number' | 'password' | 'select' | 'url'
   options?: string[]
   placeholder?: string
   sensitive?: boolean
@@ -107,6 +108,7 @@ type ConfigGroup = {
 }
 
 type ConfigDraft = Record<string, string>
+type ConfigInputMode = 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url'
 
 const lockedConfigKeys = new Set([
   'CAPTURE_SOURCE_KIND',
@@ -128,7 +130,7 @@ const configGroups: ConfigGroup[] = [
     accent: 'accent-video',
     fields: [
       { key: 'CAPTURE_SOURCE_KIND', label: '输入类型', input: 'select', options: ['http_mjpeg', 'rtsp', 'rtmp', 'camera', 'file'] },
-      { key: 'CAPTURE_SOURCE_URL', label: '拉流地址', input: 'text', placeholder: 'http://手机IP:8080/video 或 rtsp://...' },
+      { key: 'CAPTURE_SOURCE_URL', label: '拉流地址', input: 'url', placeholder: 'http://手机IP:8080/video 或 rtsp://host/live…' },
       { key: 'CAPTURE_USERNAME', label: '拉流账号', input: 'text' },
       { key: 'CAPTURE_PASSWORD', label: '拉流密码', input: 'password', sensitive: true },
       { key: 'CAPTURE_FPS_LIMIT', label: '采集 FPS 上限', input: 'number' },
@@ -144,7 +146,7 @@ const configGroups: ConfigGroup[] = [
     fields: [
       { key: 'STREAM_MODE', label: '流模式', input: 'select', options: ['pull', 'push'] },
       { key: 'STREAM_PROTOCOL', label: '推流协议', input: 'select', options: ['http_mjpeg', 'rtsp', 'rtmp'] },
-      { key: 'STREAM_PUSH_URL', label: '推流地址', input: 'text', placeholder: 'rtmp://server/live/camera-1' },
+      { key: 'STREAM_PUSH_URL', label: '推流地址', input: 'url', placeholder: 'rtmp://server/live/camera-1…' },
       { key: 'STREAM_USERNAME', label: '推流账号', input: 'text' },
       { key: 'STREAM_PASSWORD', label: '推流密码', input: 'password', sensitive: true },
     ],
@@ -155,12 +157,12 @@ const configGroups: ConfigGroup[] = [
     icon: Cpu,
     accent: 'accent-gpu',
     fields: [
-      { key: 'INFERENCE_ENDPOINT', label: '远端推理直连 URL', input: 'text', placeholder: 'http://服务器:8000' },
+      { key: 'INFERENCE_ENDPOINT', label: '远端推理直连 URL', input: 'url', placeholder: 'http://服务器:8000…' },
       { key: 'INFERENCE_DEVICE', label: '推理设备', input: 'select', options: ['auto', 'cpu', 'cuda'] },
       { key: 'INFERENCE_MODEL', label: '模型文件', input: 'text' },
       { key: 'CONFIDENCE_THRESHOLD', label: '置信度阈值', input: 'number' },
       { key: 'FRAME_INTERVAL', label: '推理帧间隔', input: 'number' },
-      { key: 'DETECTION_CLASS_FILTER', label: '类别过滤', input: 'text', placeholder: 'person, car, bicycle' },
+      { key: 'DETECTION_CLASS_FILTER', label: '类别过滤', input: 'text', placeholder: 'person, car, bicycle…' },
     ],
   },
   {
@@ -178,7 +180,7 @@ const configGroups: ConfigGroup[] = [
     icon: Database,
     accent: 'accent-db',
     fields: [
-      { key: 'DATABASE_URL', label: '数据库连接串', input: 'password', sensitive: true, placeholder: '留空保留当前连接串' },
+      { key: 'DATABASE_URL', label: '数据库连接串', input: 'password', sensitive: true, placeholder: '留空保留当前连接串…' },
       { key: 'DATABASE_CONNECT_TIMEOUT', label: '连接超时秒数', input: 'number' },
       { key: 'DATABASE_BATCH_SIZE', label: '批量写入条数', input: 'number' },
       { key: 'DATABASE_FLUSH_INTERVAL_MS', label: '刷库间隔毫秒', input: 'number' },
@@ -191,16 +193,36 @@ const configGroups: ConfigGroup[] = [
     icon: Server,
     accent: 'accent-remote',
     fields: [
-      { key: 'REMOTE_API_BASE_URL', label: '直连 API Base URL', input: 'text', placeholder: 'http://服务器:8000' },
+      { key: 'REMOTE_API_BASE_URL', label: '直连 API Base URL', input: 'url', placeholder: 'http://服务器:8000…' },
       { key: 'REMOTE_API_HOST', label: '服务器 API 监听主机', input: 'text' },
       { key: 'REMOTE_API_PORT', label: '服务器 API 监听端口', input: 'number' },
-      { key: 'REMOTE_SSH_HOST', label: 'SSH 管理主机', input: 'text', placeholder: '可选' },
+      { key: 'REMOTE_SSH_HOST', label: 'SSH 管理主机', input: 'text', placeholder: '可选…' },
       { key: 'REMOTE_SSH_PORT', label: 'SSH 管理端口', input: 'number' },
-      { key: 'REMOTE_SSH_USER', label: 'SSH 管理用户', input: 'text', placeholder: '可选' },
-      { key: 'REMOTE_SSH_KEY_PATH', label: 'SSH 私钥路径', input: 'text', placeholder: '可选' },
+      { key: 'REMOTE_SSH_USER', label: 'SSH 管理用户', input: 'text', placeholder: '可选…' },
+      { key: 'REMOTE_SSH_KEY_PATH', label: 'SSH 私钥路径', input: 'text', placeholder: '可选…' },
     ],
   },
 ]
+
+const tabKeys = new Set<TabKey>(tabs.map((tab) => tab.key))
+const confidenceFormatter = new Intl.NumberFormat('zh-CN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+const numberFormatter = new Intl.NumberFormat('zh-CN')
+const dateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+})
+const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+})
 
 const remoteActions: Array<{ action: RemoteAction; label: string; icon: typeof Activity }> = [
   { action: 'check', label: 'SSH 检测', icon: ShieldCheck },
@@ -214,8 +236,19 @@ const remoteActions: Array<{ action: RemoteAction; label: string; icon: typeof A
 ]
 
 function App() {
-  const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [activeTab, setActiveTab] = useState<TabKey>(() => getTabFromLocation())
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    writeTabToUrl(getTabFromLocation(), 'replace')
+
+    function handlePopState() {
+      setActiveTab(getTabFromLocation())
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   const health = useQuery({
     queryKey: ['health'],
@@ -302,8 +335,8 @@ function App() {
   )
   const environmentSummary = environment.data?.summary
   const environmentText = environmentSummary
-    ? `${environmentSummary.ok} 正常 / ${environmentSummary.warn} 提醒 / ${environmentSummary.error} 错误`
-    : '检测中'
+    ? `${numberFormatter.format(environmentSummary.ok)} 正常 / ${numberFormatter.format(environmentSummary.warn)} 提醒 / ${numberFormatter.format(environmentSummary.error)} 错误`
+    : '检测中…'
   const summaryChart = environmentSummary
     ? (Object.entries(environmentSummary) as Array<[CheckStatus, number]>).map(
         ([name, value]) => ({ name, value }),
@@ -325,8 +358,15 @@ function App() {
     return environmentChecks.get(name)
   }
 
+  function handleTabChange(tab: TabKey) {
+    setActiveTab(tab)
+    writeTabToUrl(tab, 'push')
+  }
+
   return (
-    <main className="shell">
+    <>
+      <a className="skip-link" href="#main-content">跳到主内容</a>
+      <main className="shell" id="main-content">
       <header className="command-bar">
         <div className="brand-lockup">
           <span className="brand-mark">
@@ -378,10 +418,11 @@ function App() {
           const Icon = tab.icon
           return (
             <button
+              aria-current={activeTab === tab.key ? 'page' : undefined}
               className={activeTab === tab.key ? 'active' : ''}
               key={tab.key}
               type="button"
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => handleTabChange(tab.key)}
             >
               <Icon size={17} aria-hidden="true" />
               {tab.label}
@@ -416,7 +457,7 @@ function App() {
           onProbe={() => probeMutation.mutate()}
           probePending={probeMutation.isPending}
           probeResult={probeMutation.data}
-          onSave={(values) => updateConfigMutation.mutate(values)}
+          onSave={(values) => updateConfigMutation.mutateAsync(values)}
           savePending={updateConfigMutation.isPending}
           saveResult={updateConfigMutation.data}
           saveError={updateConfigMutation.error?.message}
@@ -451,7 +492,8 @@ function App() {
           bucketChart={bucketChart}
         />
       )}
-    </main>
+      </main>
+    </>
   )
 }
 
@@ -503,7 +545,7 @@ function FrameConsole({
             <span>{formatDetectionLabel(primaryDetection)}</span>
           </div>
         ) : (
-          <div className="stage-empty">等待检测结果</div>
+          <div className="stage-empty">等待检测结果…</div>
         )}
         {secondaryDetection && (
           <div className="bbox bbox-secondary">
@@ -511,7 +553,7 @@ function FrameConsole({
           </div>
         )}
         <div className="frame-footer">
-          <span>{inferenceStatus?.message ?? '推理状态检测中'}</span>
+          <span>{inferenceStatus?.message ?? '推理状态检测中…'}</span>
           <span>{captureStatus?.detections_queued ?? 0} queued</span>
         </div>
       </div>
@@ -698,7 +740,7 @@ function ConfigPage({
   onProbe: () => void
   probePending: boolean
   probeResult?: Record<string, unknown>
-  onSave: (values: Record<string, ConfigValue>) => void
+  onSave: (values: Record<string, ConfigValue>) => Promise<ActionResponse>
   savePending: boolean
   saveResult?: Record<string, unknown>
   saveError?: string
@@ -708,29 +750,39 @@ function ConfigPage({
   remoteError?: string
 }) {
   const currentDraft = useMemo(() => buildConfigDraft(config, videoConfig), [config, videoConfig])
-  const [draft, setDraft] = useState<ConfigDraft>(currentDraft)
+  const [draft, setDraft] = useState<ConfigDraft>({})
   const [dirty, setDirty] = useState(false)
   const [remoteDbPassword, setRemoteDbPassword] = useState('')
+  const visibleDraft = dirty ? draft : currentDraft
 
   useEffect(() => {
     if (!dirty) {
-      setDraft(currentDraft)
+      return undefined
     }
-  }, [currentDraft, dirty])
 
-  useEffect(() => {
-    if (saveResult?.status === 'ok') {
-      setDirty(false)
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault()
+      event.returnValue = ''
     }
-  }, [saveResult])
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [dirty])
 
   function updateField(key: string, value: string) {
-    setDraft((current) => ({ ...current, [key]: value }))
+    setDraft((current) => ({ ...(dirty ? current : currentDraft), [key]: value }))
     setDirty(true)
   }
 
   function saveConfig() {
-    onSave(collectConfigValues(draft, currentDraft))
+    void onSave(collectConfigValues(visibleDraft, currentDraft))
+      .then((result) => {
+        if (result.status === 'ok') {
+          setDraft({})
+          setDirty(false)
+        }
+      })
+      .catch(() => undefined)
   }
 
   function runRemote(action: RemoteAction) {
@@ -762,7 +814,9 @@ function ConfigPage({
                   </span>
                   {field.input === 'select' ? (
                     <select
-                      value={draft[field.key] ?? ''}
+                      autoComplete="off"
+                      name={field.key}
+                      value={visibleDraft[field.key] ?? ''}
                       onChange={(event) => updateField(field.key, event.target.value)}
                     >
                       {(field.options ?? []).map((option) => (
@@ -773,9 +827,13 @@ function ConfigPage({
                     </select>
                   ) : (
                     <input
+                      autoComplete="off"
+                      inputMode={inputModeForField(field)}
+                      name={field.key}
+                      spellCheck={false}
                       type={field.input}
-                      step={field.key === 'CONFIDENCE_THRESHOLD' ? '0.05' : '1'}
-                      value={draft[field.key] ?? ''}
+                      step={field.input === 'number' ? numberStepForField(field) : undefined}
+                      value={visibleDraft[field.key] ?? ''}
                       placeholder={placeholderForField(field, config)}
                       onChange={(event) => updateField(field.key, event.target.value)}
                     />
@@ -790,7 +848,7 @@ function ConfigPage({
                   检测视频配置
                 </button>
                 {probeResult && (
-                  <span className="action-result">{String(probeResult.message ?? probeResult.status)}</span>
+                  <span className="action-result" aria-live="polite">{String(probeResult.message ?? probeResult.status)}</span>
                 )}
               </div>
             )}
@@ -803,7 +861,7 @@ function ConfigPage({
             )}
             {group.title === '推理配置' && (
               <div className={`notice ${inferenceStatus?.status ?? 'warn'}`}>
-                {inferenceStatus?.message ?? '推理状态检测中'}
+                {inferenceStatus?.message ?? '推理状态检测中…'}
               </div>
             )}
           </div>
@@ -822,8 +880,8 @@ function ConfigPage({
           </button>
           <button
             type="button"
-            onClick={() => {
-              setDraft(currentDraft)
+              onClick={() => {
+              setDraft({})
               setDirty(false)
             }}
             disabled={!dirty || savePending}
@@ -831,7 +889,7 @@ function ConfigPage({
             <RotateCw size={17} aria-hidden="true" />
             还原
           </button>
-          {saveMessage && <span className={`action-result ${saveError ? 'error' : ''}`}>{saveMessage}</span>}
+          {saveMessage && <span className={`action-result ${saveError ? 'error' : ''}`} aria-live="polite">{saveMessage}</span>}
         </div>
       </div>
 
@@ -848,9 +906,13 @@ function ConfigPage({
               <span>SSH 配库密码</span>
             </span>
             <input
+              autoComplete="off"
+              inputMode="text"
+              name="REMOTE_DATABASE_PASSWORD"
+              spellCheck={false}
               type="password"
               value={remoteDbPassword}
-              placeholder="留空自动生成或使用脚本默认值"
+              placeholder="留空自动生成或使用脚本默认值…"
               onChange={(event) => setRemoteDbPassword(event.target.value)}
             />
           </label>
@@ -871,7 +933,7 @@ function ConfigPage({
             )
           })}
         </div>
-        <pre className="terminal-output">{remoteOutput || '等待远端操作'}</pre>
+        <pre className="terminal-output" aria-live="polite">{remoteOutput || '等待远端操作…'}</pre>
       </div>
     </section>
   )
@@ -921,8 +983,8 @@ function TasksPage({
             <Square size={17} aria-hidden="true" />
             停止采集
           </button>
-          {startResult && <span className="action-result">{String(startResult.message ?? startResult.status)}</span>}
-          {stopResult && <span className="action-result">{String(stopResult.message ?? stopResult.status)}</span>}
+          {startResult && <span className="action-result" aria-live="polite">{String(startResult.message ?? startResult.status)}</span>}
+          {stopResult && <span className="action-result" aria-live="polite">{String(stopResult.message ?? stopResult.status)}</span>}
         </div>
       </div>
 
@@ -944,7 +1006,7 @@ function TasksPage({
             <ArrowDownUp size={17} aria-hidden="true" />
             批量写库
           </button>
-          {flushResult && <span className="action-result">{String(flushResult.status)}</span>}
+          {flushResult && <span className="action-result" aria-live="polite">{String(flushResult.status)}</span>}
         </div>
       </div>
     </section>
@@ -967,6 +1029,7 @@ function AnalysisPage({
   const classFilter = String(inference.class_filter || '全部类别')
   const timeRange = Number(analysis.time_range_minutes || 30)
   const recent = analysisSummary?.recent ?? []
+  const resultMeta = analysisSummary?.result_meta ?? []
 
   return (
     <section className="workspace">
@@ -976,11 +1039,11 @@ function AnalysisPage({
           <Metric label="时间范围" value={`${timeRange} 分钟`} />
           <Metric label="类别过滤" value={classFilter} />
           <Metric label="查询状态" value={analysisSummary?.status ?? 'loading'} />
-          <Metric label="最近记录" value={recent.length} />
+          <Metric label="统计元数据" value={resultMeta.length} />
         </div>
         {analysisSummary?.status !== 'ok' && (
           <div className={`notice ${analysisSummary?.status === 'error' ? 'error' : 'warn'}`}>
-            {analysisSummary?.message ?? '等待分析数据'}
+            {analysisSummary?.message ?? '等待分析数据…'}
           </div>
         )}
         <ol className="query-list">
@@ -1017,10 +1080,54 @@ function AnalysisPage({
       </div>
 
       <div className="panel full-span">
+        <PanelHeading eyebrow="Result Meta" title="统计元数据" icon={Layers3} compact />
+        <ResultMetaTable rows={resultMeta} emptyText={analysisSummary?.message ?? '暂无统计元数据'} />
+      </div>
+
+      <div className="panel full-span">
         <PanelHeading eyebrow="Recent" title="最近写入记录" icon={ListChecks} compact />
         <DetectionTable detections={recent} emptyText={analysisSummary?.message ?? '暂无数据库记录'} />
       </div>
     </section>
+  )
+}
+
+function ResultMetaTable({
+  rows,
+  emptyText,
+}: {
+  rows: AnalysisSummary['result_meta']
+  emptyText: string
+}) {
+  if (!rows.length) {
+    return <div className="notice warn">{emptyText}</div>
+  }
+
+  return (
+    <table className="data-table">
+      <thead>
+        <tr>
+          <th>统计时间</th>
+          <th>任务</th>
+          <th>类别</th>
+          <th>平均置信度</th>
+          <th>数量</th>
+          <th>窗口</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((item, index) => (
+          <tr key={`${item.stat_time}-${item.task_id}-${item.object_class}-${index}`}>
+            <td>{formatDateTime(item.stat_time)}</td>
+            <td>{item.task_id}</td>
+            <td>{item.object_class}</td>
+            <td>{formatConfidence(item.avg_confidence)}</td>
+            <td>{numberFormatter.format(item.total_count)}</td>
+            <td>{numberFormatter.format(item.stat_window_seconds)} 秒</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 
@@ -1065,7 +1172,7 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="metric">
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong>{typeof value === 'number' ? numberFormatter.format(value) : value}</strong>
     </div>
   )
 }
@@ -1190,6 +1297,57 @@ function collectConfigValues(
   return values
 }
 
+function getTabFromLocation(): TabKey {
+  if (typeof window === 'undefined') {
+    return 'overview'
+  }
+
+  const tab = new URLSearchParams(window.location.search).get('tab')
+  return isTabKey(tab) ? tab : 'overview'
+}
+
+function isTabKey(value: string | null): value is TabKey {
+  return value !== null && tabKeys.has(value as TabKey)
+}
+
+function writeTabToUrl(tab: TabKey, mode: 'push' | 'replace') {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const url = new URL(window.location.href)
+  url.searchParams.set('tab', tab)
+  const nextPath = `${url.pathname}${url.search}${url.hash}`
+  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+
+  if (nextPath === currentPath) {
+    return
+  }
+
+  if (mode === 'replace') {
+    window.history.replaceState(null, '', nextPath)
+  } else {
+    window.history.pushState(null, '', nextPath)
+  }
+}
+
+function inputModeForField(field: ConfigField): ConfigInputMode | undefined {
+  if (field.input === 'number') {
+    return field.key === 'CONFIDENCE_THRESHOLD' ? 'decimal' : 'numeric'
+  }
+  if (field.input === 'url' || field.key === 'DATABASE_URL') {
+    return 'url'
+  }
+  if (field.input === 'password') {
+    return undefined
+  }
+  return 'text'
+}
+
+function numberStepForField(field: ConfigField): string {
+  return field.key === 'CONFIDENCE_THRESHOLD' ? '0.05' : '1'
+}
+
 function placeholderForField(field: ConfigField, config?: Record<string, unknown>): string {
   if (field.key === 'DATABASE_URL') {
     const currentUrl = pickObject(config, 'database').url
@@ -1197,11 +1355,11 @@ function placeholderForField(field: ConfigField, config?: Record<string, unknown
   }
 
   if (field.key === 'CAPTURE_PASSWORD') {
-    return pickObject(config, 'capture').password_set ? '已设置，留空保留' : '未设置'
+    return pickObject(config, 'capture').password_set ? '已设置，留空保留…' : '未设置…'
   }
 
   if (field.key === 'STREAM_PASSWORD') {
-    return pickObject(config, 'stream').password_set ? '已设置，留空保留' : '未设置'
+    return pickObject(config, 'stream').password_set ? '已设置，留空保留…' : '未设置…'
   }
 
   return field.placeholder ?? ''
@@ -1214,7 +1372,7 @@ function formatSaveResult(result?: Record<string, unknown>): string {
 
   const updated = result.updated
   if (Array.isArray(updated) && updated.length) {
-    return `已保存 ${updated.length} 项`
+    return `已保存 ${numberFormatter.format(updated.length)} 项`
   }
   return '没有配置变更'
 }
@@ -1256,6 +1414,9 @@ function formatValue(value: unknown): string {
   if (Array.isArray(value)) {
     return value.join(', ')
   }
+  if (typeof value === 'number') {
+    return numberFormatter.format(value)
+  }
   if (typeof value === 'object') {
     return JSON.stringify(value)
   }
@@ -1270,7 +1431,7 @@ function formatConfidence(value: number | undefined): string {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return '-'
   }
-  return value.toFixed(2)
+  return confidenceFormatter.format(value)
 }
 
 function formatDateTime(value: string): string {
@@ -1278,7 +1439,7 @@ function formatDateTime(value: string): string {
   if (Number.isNaN(date.getTime())) {
     return value
   }
-  return date.toLocaleString()
+  return dateTimeFormatter.format(date)
 }
 
 function formatBucketLabel(value: string): string {
@@ -1286,7 +1447,7 @@ function formatBucketLabel(value: string): string {
   if (Number.isNaN(date.getTime())) {
     return value
   }
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return timeFormatter.format(date)
 }
 
 function toneFromRuntime(status?: string): CheckStatus {
