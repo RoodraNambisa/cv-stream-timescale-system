@@ -1,0 +1,16 @@
+# Optional MediaMTX receiver for RTSP/RTMP push.
+# Use this as a starting point, then point CAPTURE_SOURCE_URL at the playback URL.
+
+api: yes
+apiAddress: :9997
+
+rtsp: yes
+rtspAddress: :8554
+
+rtmp: yes
+rtmpAddress: :1935
+
+paths:
+  camera:
+    source: publisher
+    runOnReadyRestart: yes

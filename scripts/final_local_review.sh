@@ -86,6 +86,11 @@ check_project_shape() {
   require_file .env.example
   require_file db/schema.sql
   require_file db/analysis_queries.sql
+  require_file deploy/mediamtx.yml
+  require_file deploy/nginx-rtmp.conf
+  require_file deploy/grafana/provisioning/datasources/timescaledb.yml
+  require_file deploy/grafana/provisioning/dashboards/cv-stream.yml
+  require_file deploy/grafana/dashboards/cv-stream.json
   require_file backend/app/main.py
   require_file apps/web/package.json
 }
@@ -171,6 +176,19 @@ check_backend_assets() {
   grep -q "check_grafana" backend/app/environment.py || fail "backend missing Grafana check"
 }
 
+check_deploy_assets() {
+  echo "==> checking optional deploy assets"
+
+  grep -q "apiAddress: :9997" deploy/mediamtx.yml || fail "MediaMTX template missing API port"
+  grep -q "rtmpAddress: :1935" deploy/mediamtx.yml || fail "MediaMTX template missing RTMP port"
+  grep -q "rtmp_stat all" deploy/nginx-rtmp.conf || fail "nginx-rtmp template missing stat endpoint"
+  grep -q "timescaledb: true" deploy/grafana/provisioning/datasources/timescaledb.yml || fail "Grafana datasource missing TimescaleDB flag"
+  grep -q "cv_detection_stream" deploy/grafana/dashboards/cv-stream.json || fail "Grafana dashboard missing detection stream query"
+  grep -q "cv_result_meta" deploy/grafana/dashboards/cv-stream.json || fail "Grafana dashboard missing result meta query"
+
+  .venv/bin/python -m json.tool deploy/grafana/dashboards/cv-stream.json >/dev/null
+}
+
 check_tracked_outputs
 check_project_shape
 check_dependency_locations
@@ -179,6 +197,7 @@ check_scripts_executable
 check_sql_assets
 check_frontend_assets
 check_backend_assets
+check_deploy_assets
 
 run_step bash -n scripts/*.sh
 run_step .venv/bin/python -m compileall backend phone_stream_cv.py

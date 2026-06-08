@@ -214,6 +214,32 @@ cp .env.example .env
 
 Grafana 是可选观测入口。React 分析页已经能展示类别分布、时间桶和统计元数据；如果你部署了 Grafana，可以让它直接读取同一个 PostgreSQL/TimescaleDB，再把 `GRAFANA_BASE_URL` 和 `GRAFANA_DASHBOARD_URL` 写入配置，环境检测会显示 Grafana 是否可达。
 
+可选组件模板：
+
+```text
+deploy/mediamtx.yml
+deploy/nginx-rtmp.conf
+deploy/grafana/provisioning/datasources/timescaledb.yml
+deploy/grafana/provisioning/dashboards/cv-stream.yml
+deploy/grafana/dashboards/cv-stream.json
+```
+
+MediaMTX 模板开启 RTSP `8554`、RTMP `1935` 和 API `9997`。推流发布到 `rtmp://SERVER_HOST:1935/camera` 或对应路径，后端读取 `rtsp://SERVER_HOST:8554/camera`、`rtmp://SERVER_HOST:1935/camera`，再把 `STREAM_RECEIVER_STATUS_URL` 指向 MediaMTX API。
+
+nginx-rtmp 模板开启 RTMP `1935` 和 stat `8088/stat`。后端不读取 stat 页面，只用它做接收器健康检测；视频读取仍走 `CAPTURE_SOURCE_URL`。
+
+Grafana provisioning 模板使用环境变量读取 PostgreSQL/TimescaleDB 连接信息：
+
+```text
+GRAFANA_PG_HOST
+GRAFANA_PG_PORT
+GRAFANA_PG_DATABASE
+GRAFANA_PG_USER
+GRAFANA_PG_PASSWORD
+```
+
+dashboard JSON 包含检测时间桶、类别 Top、分钟置信度和最近检测表。Grafana 面板和 React 分析页读同一批表，不改变后端写库流程。
+
 采集运行中仍可热重载 `CONFIDENCE_THRESHOLD`、`FRAME_INTERVAL`、`CAPTURE_FPS_LIMIT`、`DETECTION_CLASS_FILTER`、`ANALYSIS_TIME_RANGE_MINUTES`、`DATABASE_BATCH_SIZE` 和 `DATABASE_FLUSH_INTERVAL_MS`。系统会继续使用启动时的视频源、推理端点、模型、数据库 URL 和 spool 路径。
 
 运行时写库只看 `DATABASE_URL`，后端通过 PostgreSQL 协议直接连接本地或远端数据库。SSH 配库只负责创建用户、启动服务、应用 schema、写服务器 `.env`，不参与正常检测数据写入。只有在平台允许端口转发且数据库无法直连时，才把 SSH 隧道当作临时诊断方案。
