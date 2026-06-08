@@ -27,6 +27,18 @@
 scripts/setup_local_backend.sh
 ```
 
+安装前端依赖：
+
+```bash
+scripts/setup_web.sh
+```
+
+执行本地 smoke check：
+
+```bash
+scripts/local_smoke_check.sh
+```
+
 启动 FastAPI：
 
 ```bash
