@@ -13,11 +13,22 @@ COPYFILE_DISABLE=1 tar \
   --exclude .DS_Store \
   --exclude .env \
   --exclude .venv \
+  --exclude docs \
+  --exclude __pycache__ \
+  --exclude '*/__pycache__' \
+  --exclude '.pytest_cache' \
+  --exclude '.mypy_cache' \
+  --exclude '.ruff_cache' \
   --exclude 'apps/web/node_modules' \
   --exclude 'apps/web/dist' \
-  --exclude 'backend/app/__pycache__' \
   --exclude 'runtime/*' \
   --exclude '*.pyc' \
+  --exclude '*.db' \
+  --exclude '*.pt' \
+  --exclude '*.onnx' \
+  --exclude '*.engine' \
+  --exclude '*.avi' \
+  --exclude '*.mp4' \
   -C "$ROOT_DIR" \
   -cf - . \
   | ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" "

@@ -8,9 +8,12 @@ REMOTE_PROJECT_DIR="${REMOTE_PROJECT_DIR:-REMOTE_PROJECT_DIR}"
 REMOTE_PYTHON="${REMOTE_PYTHON:-python3}"
 REMOTE_API_HOST="${REMOTE_API_HOST:-127.0.0.1}"
 REMOTE_API_PORT="${REMOTE_API_PORT:-8000}"
+REMOTE_CONNECT_TIMEOUT="${REMOTE_CONNECT_TIMEOUT:-8}"
 
 SSH_ARGS=(
   -i "$REMOTE_KEY"
+  -o BatchMode=yes
+  -o ConnectTimeout="$REMOTE_CONNECT_TIMEOUT"
   -o IdentitiesOnly=yes
   -o PubkeyAcceptedAlgorithms=+ssh-rsa
   -o HostkeyAlgorithms=+ssh-rsa
