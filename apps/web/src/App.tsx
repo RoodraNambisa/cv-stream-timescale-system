@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   ArrowDownUp,
@@ -40,6 +40,7 @@ import {
   type SpoolStatus,
   type VideoConfig,
   fetchCaptureStatus,
+  fetchCaptureFrame,
   fetchAnalysisSummary,
   fetchEnvironment,
   fetchHealth,
@@ -792,8 +793,64 @@ function FrameConsole({
   const model = String(pickObject(config, 'inference').model || 'yolov8n.pt')
   const tone = toneFromRuntime(captureStatus?.status)
   const recentDetections = captureStatus?.recent_detections ?? []
-  const primaryDetection = recentDetections[0]
-  const secondaryDetection = recentDetections[1]
+  const latestFrameVersion = captureStatus?.latest_frame_version ?? 0
+  const frameWidth = captureStatus?.latest_frame_width ?? 0
+  const frameHeight = captureStatus?.latest_frame_height ?? 0
+  const [framePreviewUrl, setFramePreviewUrl] = useState('')
+  const [framePreviewError, setFramePreviewError] = useState('')
+  const framePreviewUrlRef = useRef<string | null>(null)
+  const visibleFramePreviewUrl = latestFrameVersion ? framePreviewUrl : ''
+  const detectionBoxes = recentDetections
+    .map((detection) => ({
+      detection,
+      style: detectionBoxStyle(detection, frameWidth, frameHeight),
+    }))
+    .filter((item): item is { detection: DetectionSnapshot; style: Record<string, string> } => Boolean(item.style))
+    .slice(0, 6)
+
+  useEffect(() => {
+    if (!latestFrameVersion) {
+      if (framePreviewUrlRef.current) {
+        URL.revokeObjectURL(framePreviewUrlRef.current)
+        framePreviewUrlRef.current = null
+      }
+      return undefined
+    }
+
+    let cancelled = false
+    void fetchCaptureFrame()
+      .then((blob) => {
+        if (cancelled) {
+          return
+        }
+
+        const nextUrl = URL.createObjectURL(blob)
+        if (framePreviewUrlRef.current) {
+          URL.revokeObjectURL(framePreviewUrlRef.current)
+        }
+        framePreviewUrlRef.current = nextUrl
+        setFramePreviewUrl(nextUrl)
+        setFramePreviewError('')
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setFramePreviewError(error instanceof Error ? error.message : String(error))
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [latestFrameVersion])
+
+  useEffect(() => {
+    return () => {
+      if (framePreviewUrlRef.current) {
+        URL.revokeObjectURL(framePreviewUrlRef.current)
+        framePreviewUrlRef.current = null
+      }
+    }
+  }, [])
 
   return (
     <section className="frame-console panel">
@@ -808,7 +865,14 @@ function FrameConsole({
         </span>
       </div>
 
-      <div className="video-stage" aria-label="视频帧预览">
+      <div className={`video-stage ${visibleFramePreviewUrl ? 'has-frame' : ''}`} aria-label="视频帧预览">
+        {visibleFramePreviewUrl && (
+          <img
+            alt=""
+            className="video-frame"
+            src={visibleFramePreviewUrl}
+          />
+        )}
         <div className="scan-grid" aria-hidden="true" />
         <div className="frame-meta top-left">
           <span>FRAME</span>
@@ -818,16 +882,18 @@ function FrameConsole({
           <span>MODEL</span>
           <strong>{model}</strong>
         </div>
-        {primaryDetection ? (
-          <div className="bbox bbox-primary">
-            <span>{formatDetectionLabel(primaryDetection)}</span>
+        {detectionBoxes.map(({ detection, style }, index) => (
+          <div
+            className={`bbox ${index % 2 === 1 ? 'bbox-alt' : ''}`}
+            key={`${detection.frame_index ?? 'frame'}-${detection.object_class}-${index}`}
+            style={style}
+          >
+            <span>{formatDetectionLabel(detection)}</span>
           </div>
-        ) : (
-          <div className="stage-empty">等待检测结果…</div>
-        )}
-        {secondaryDetection && (
-          <div className="bbox bbox-secondary">
-            <span>{formatDetectionLabel(secondaryDetection)}</span>
+        ))}
+        {!visibleFramePreviewUrl && (
+          <div className="stage-empty">
+            {framePreviewError ? '视频帧预览读取失败' : '等待视频帧…'}
           </div>
         )}
         <div className="frame-footer">
@@ -2031,6 +2097,52 @@ function formatValue(value: unknown): string {
     return JSON.stringify(value)
   }
   return String(value)
+}
+
+function detectionBoxStyle(
+  detection: DetectionSnapshot,
+  frameWidth: number,
+  frameHeight: number,
+): Record<string, string> | undefined {
+  const x1 = numberOrNull(detection.bbox_x1)
+  const y1 = numberOrNull(detection.bbox_y1)
+  const x2 = numberOrNull(detection.bbox_x2)
+  const y2 = numberOrNull(detection.bbox_y2)
+  if (x1 === null || y1 === null || x2 === null || y2 === null) {
+    return undefined
+  }
+
+  const normalized = x2 <= 1 && y2 <= 1
+  const widthBase = normalized ? 1 : frameWidth
+  const heightBase = normalized ? 1 : frameHeight
+  if (widthBase <= 0 || heightBase <= 0) {
+    return undefined
+  }
+
+  const left = clampNumber(Math.min(x1, x2) / widthBase, 0, 1)
+  const top = clampNumber(Math.min(y1, y2) / heightBase, 0, 1)
+  const right = clampNumber(Math.max(x1, x2) / widthBase, 0, 1)
+  const bottom = clampNumber(Math.max(y1, y2) / heightBase, 0, 1)
+  const width = right - left
+  const height = bottom - top
+  if (width <= 0.005 || height <= 0.005) {
+    return undefined
+  }
+
+  return {
+    left: `${left * 100}%`,
+    top: `${top * 100}%`,
+    width: `${width * 100}%`,
+    height: `${height * 100}%`,
+  }
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
 }
 
 function formatDetectionLabel(detection: DetectionSnapshot): string {

@@ -2,7 +2,7 @@ import secrets
 from typing import Any, Optional
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
@@ -213,6 +213,22 @@ async def flush_spool() -> dict:
 @app.get("/api/capture/status")
 async def capture_status() -> dict:
     return await capture.status()
+
+
+@app.get("/api/capture/frame.jpg")
+async def capture_frame() -> Response:
+    frame, frame_version = await capture.latest_frame()
+    if frame is None:
+        raise HTTPException(status_code=404, detail="No captured frame is available")
+
+    return Response(
+        content=frame,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Frame-Version": str(frame_version),
+        },
+    )
 
 
 @app.post("/api/capture/start")

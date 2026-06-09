@@ -66,6 +66,9 @@ export type CaptureStatus = {
   last_error: string | null
   settings_locked: Record<string, unknown>
   recent_detections: DetectionSnapshot[]
+  latest_frame_version: number
+  latest_frame_width: number
+  latest_frame_height: number
 }
 
 export type AnalysisSummary = {
@@ -260,6 +263,22 @@ export async function fetchInferenceStatus(): Promise<InferenceStatus> {
 
 export async function fetchCaptureStatus(): Promise<CaptureStatus> {
   return readJson('/api/capture/status')
+}
+
+export async function fetchCaptureFrame(): Promise<Blob> {
+  const resolvedUrl = resolveApiUrl(`/api/capture/frame.jpg?t=${Date.now()}`)
+  const response = await fetch(
+    resolvedUrl,
+    withAuthHeaders({
+      cache: 'no-store',
+    }),
+  )
+
+  if (!response.ok) {
+    throw new Error(`${resolvedUrl} failed: ${response.status}`)
+  }
+
+  return response.blob()
 }
 
 export async function fetchAnalysisSummary(): Promise<AnalysisSummary> {

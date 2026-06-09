@@ -36,6 +36,10 @@ class CaptureState:
     last_error: str | None = None
     settings_locked: dict[str, Any] = field(default_factory=dict)
     recent_detections: list[dict[str, Any]] = field(default_factory=list)
+    latest_frame_jpeg: bytes | None = None
+    latest_frame_version: int = 0
+    latest_frame_width: int = 0
+    latest_frame_height: int = 0
 
 
 class CaptureManager:
@@ -141,6 +145,10 @@ class CaptureManager:
         async with self._lock:
             return self._snapshot_locked()
 
+    async def latest_frame(self) -> tuple[bytes | None, int]:
+        async with self._lock:
+            return self._state.latest_frame_jpeg, self._state.latest_frame_version
+
     async def shutdown(self) -> None:
         async with self._lock:
             task = self._task
@@ -213,9 +221,19 @@ class CaptureManager:
 
                 consecutive_read_failures = 0
                 frame_index = await self._bump_frame_read()
+                image_bytes = await asyncio.to_thread(_encode_jpeg, frame)
+                if image_bytes is not None:
+                    height, width = frame.shape[:2]
+                    await self._store_latest_frame(image_bytes, frame_index, width, height)
 
                 if frame_index % frame_interval == 0:
-                    await self._infer_and_enqueue(runtime_settings, request, frame, frame_index)
+                    await self._infer_and_enqueue(
+                        runtime_settings,
+                        request,
+                        frame,
+                        frame_index,
+                        image_bytes,
+                    )
 
                 if fps_sleep_seconds > 0:
                     await asyncio.sleep(fps_sleep_seconds)
@@ -244,8 +262,9 @@ class CaptureManager:
         request: CaptureStartRequest,
         frame: Any,
         frame_index: int,
+        image_bytes: bytes | None = None,
     ) -> None:
-        image_bytes = await asyncio.to_thread(_encode_jpeg, frame)
+        image_bytes = image_bytes or await asyncio.to_thread(_encode_jpeg, frame)
         if image_bytes is None:
             await self._update_state(last_error="frame_encode_failed")
             return
@@ -277,6 +296,19 @@ class CaptureManager:
             self._state.last_frame_at = utc_now()
             return self._state.frames_read
 
+    async def _store_latest_frame(
+        self,
+        image_bytes: bytes,
+        frame_index: int,
+        width: int,
+        height: int,
+    ) -> None:
+        async with self._lock:
+            self._state.latest_frame_jpeg = image_bytes
+            self._state.latest_frame_version = frame_index
+            self._state.latest_frame_width = width
+            self._state.latest_frame_height = height
+
     async def _bump_counter(self, name: str, count: int) -> None:
         async with self._lock:
             current_value = getattr(self._state, name)
@@ -305,6 +337,10 @@ class CaptureManager:
                 last_error=updates.get("last_error", current.last_error),
                 settings_locked=updates.get("settings_locked", current.settings_locked),
                 recent_detections=updates.get("recent_detections", current.recent_detections),
+                latest_frame_jpeg=updates.get("latest_frame_jpeg", current.latest_frame_jpeg),
+                latest_frame_version=updates.get("latest_frame_version", current.latest_frame_version),
+                latest_frame_width=updates.get("latest_frame_width", current.latest_frame_width),
+                latest_frame_height=updates.get("latest_frame_height", current.latest_frame_height),
             )
 
     async def _update_state(self, **updates: Any) -> None:
@@ -325,6 +361,9 @@ class CaptureManager:
             "last_error": self._state.last_error,
             "settings_locked": self._state.settings_locked,
             "recent_detections": self._state.recent_detections,
+            "latest_frame_version": self._state.latest_frame_version,
+            "latest_frame_width": self._state.latest_frame_width,
+            "latest_frame_height": self._state.latest_frame_height,
         }
 
 
