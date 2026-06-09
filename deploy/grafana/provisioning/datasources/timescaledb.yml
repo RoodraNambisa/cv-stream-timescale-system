@@ -11,6 +11,7 @@ datasources:
     secureJsonData:
       password: ${GRAFANA_PG_PASSWORD}
     jsonData:
+      database: ${GRAFANA_PG_DATABASE}
       postgresVersion: 1400
       sslmode: ${GRAFANA_PG_SSLMODE}
       timescaledb: true
