@@ -13,7 +13,12 @@ from .config import parse_detection_class_filter
 from .detections import DetectionRecord, utc_now
 from .inference import infer_image_bytes
 from .spool import DetectionSpool
-from .video import resolve_video_source, set_capture_timeout
+from .video import (
+    NETWORK_CAPTURE_KINDS,
+    resolve_video_source,
+    set_capture_timeout,
+    set_low_latency_capture_options,
+)
 
 
 class CaptureStartRequest(BaseModel):
@@ -187,6 +192,7 @@ class CaptureManager:
 
         capture = cv2.VideoCapture()
         set_capture_timeout(capture, cv2, 3000)
+        set_low_latency_capture_options(capture, cv2)
         opened = await asyncio.to_thread(capture.open, source)
         if not opened:
             await self._replace_state(
@@ -197,6 +203,7 @@ class CaptureManager:
             )
             await asyncio.to_thread(capture.release)
             return
+        set_low_latency_capture_options(capture, cv2)
 
         consecutive_read_failures = 0
         last_preview_at = 0.0
@@ -205,11 +212,7 @@ class CaptureManager:
             while not stop_event.is_set():
                 runtime_settings = get_settings()
                 frame_interval = max(request.frame_interval or runtime_settings.frame_interval, 1)
-                fps_sleep_seconds = (
-                    1 / runtime_settings.capture_fps_limit
-                    if runtime_settings.capture_fps_limit > 0
-                    else 0.0
-                )
+                fps_sleep_seconds = _capture_sleep_seconds(runtime_settings)
 
                 if request.max_frames is not None and self._state.frames_read >= request.max_frames:
                     await self._update_state(message="已达到本次采集帧数上限")
@@ -437,6 +440,14 @@ def _encode_jpeg(frame: Any) -> bytes | None:
 def _preview_interval_seconds(settings: Settings) -> float:
     preview_fps = min(max(settings.capture_fps_limit, 1), 10)
     return 1 / preview_fps
+
+
+def _capture_sleep_seconds(settings: Settings) -> float:
+    if settings.capture_source_kind in NETWORK_CAPTURE_KINDS or settings.capture_source_kind == "camera":
+        return 0.0
+    if settings.capture_fps_limit <= 0:
+        return 0.0
+    return 1 / settings.capture_fps_limit
 
 
 async def _cancel_task(task: asyncio.Task | None) -> None:

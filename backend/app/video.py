@@ -87,6 +87,7 @@ def _probe_video_source_sync(settings: Settings, max_frames: int) -> dict[str, A
 
     capture = cv2.VideoCapture()
     set_capture_timeout(capture, cv2, 3000)
+    set_low_latency_capture_options(capture, cv2)
 
     opened = capture.open(source)
     if not opened:
@@ -100,6 +101,7 @@ def _probe_video_source_sync(settings: Settings, max_frames: int) -> dict[str, A
                 "source": _mask_url(str(source)),
             },
         }
+    set_low_latency_capture_options(capture, cv2)
 
     frame_count = 0
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
@@ -229,6 +231,11 @@ def set_capture_timeout(capture: Any, cv2: Any, timeout_ms: int) -> None:
     for prop_name in ("CAP_PROP_OPEN_TIMEOUT_MSEC", "CAP_PROP_READ_TIMEOUT_MSEC"):
         if hasattr(cv2, prop_name):
             capture.set(getattr(cv2, prop_name), timeout_ms)
+
+
+def set_low_latency_capture_options(capture: Any, cv2: Any) -> None:
+    if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
+        capture.set(getattr(cv2, "CAP_PROP_BUFFERSIZE"), 1)
 
 
 def _mask_url(value: str) -> str:
