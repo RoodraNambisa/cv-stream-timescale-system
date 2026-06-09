@@ -11,6 +11,7 @@ import {
   HardDrive,
   Layers3,
   ListChecks,
+  Maximize2,
   Play,
   RadioTower,
   RotateCw,
@@ -23,6 +24,7 @@ import {
   Terminal,
   Video,
   Wrench,
+  X,
   Zap,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -239,6 +241,19 @@ const pushVideoFields: ConfigField[] = [
 
 const captureMetaFields: ConfigField[] = [
   { key: 'CAPTURE_FPS_LIMIT', label: '采集 FPS 上限', input: 'number' },
+  {
+    key: 'CAPTURE_ROTATE_DEGREES',
+    label: '画面旋转',
+    input: 'select',
+    options: ['0', '90', '180', '270'],
+    optionLabels: {
+      '0': '不旋转',
+      '90': '顺时针 90°',
+      '180': '旋转 180°',
+      '270': '逆时针 90°',
+    },
+    helper: '手机竖屏导致画面侧转时使用；会先转正再预览和推理。',
+  },
   { key: 'CAPTURE_DEVICE_ID', label: '设备 ID', input: 'number' },
   { key: 'CAPTURE_TASK_ID', label: '任务 ID', input: 'number' },
 ]
@@ -676,7 +691,6 @@ function App() {
           captureStatus={capture.data}
           config={environment.data?.config}
           videoConfig={video.data}
-          inferenceStatus={inference.data}
         />
         <PipelineMap
           videoCheck={checkFor('video_source')}
@@ -781,12 +795,10 @@ function FrameConsole({
   captureStatus,
   config,
   videoConfig,
-  inferenceStatus,
 }: {
   captureStatus?: CaptureStatus
   config?: Record<string, unknown>
   videoConfig?: VideoConfig
-  inferenceStatus?: InferenceStatus
 }) {
   const captureConfig = videoConfig?.capture ?? pickObject(config, 'capture')
   const source = String(captureConfig.source_url || captureStatus?.settings_locked?.source || '未配置视频源')
@@ -800,6 +812,8 @@ function FrameConsole({
   const [framePreviewUrl, setFramePreviewUrl] = useState('')
   const [framePreviewError, setFramePreviewError] = useState('')
   const [previewFrameVersion, setPreviewFrameVersion] = useState(0)
+  const [frameHudVisible, setFrameHudVisible] = useState(false)
+  const [viewerOpen, setViewerOpen] = useState(false)
   const framePreviewUrlRef = useRef<string | null>(null)
   const framePreviewVersionRef = useRef(0)
   const previewActive = captureStatus?.status === 'running' || latestFrameVersion > 0
@@ -823,6 +837,7 @@ function FrameConsole({
       ? `检测延迟 ${overlayLagFrames} 帧`
       : `检测滞后 ${overlayLagFrames} 帧，已隐藏旧框`
     : '等待检测框…'
+  const queuedText = `${numberFormatter.format(captureStatus?.detections_queued ?? 0)} queued`
   const detectionBoxes = overlayDetections
     .map((detection) => ({
       detection,
@@ -895,56 +910,184 @@ function FrameConsole({
     }
   }, [])
 
-  return (
-    <section className="frame-console panel">
-      <div className="frame-toolbar">
-        <div>
-          <p className="eyebrow">Frame Input</p>
-          <h2>{source}</h2>
-        </div>
-        <span className={`live-chip ${tone}`}>
-          <Activity size={15} aria-hidden="true" />
-          {captureStatus?.status ?? 'idle'}
-        </span>
-      </div>
+  useEffect(() => {
+    if (!viewerOpen) {
+      return undefined
+    }
 
-      <div className={`video-stage ${visibleFramePreviewUrl ? 'has-frame' : ''}`} aria-label="视频帧预览">
-        {visibleFramePreviewUrl && (
-          <img
-            alt=""
-            className="video-frame"
-            src={visibleFramePreviewUrl}
-          />
-        )}
-        <div className="scan-grid" aria-hidden="true" />
-        <div className="frame-meta top-left">
-          <span>FRAME</span>
-          <strong>{String(displayFrameNumber).padStart(6, '0')}</strong>
-        </div>
-        <div className="frame-meta top-right">
-          <span>MODEL</span>
-          <strong>{model}</strong>
-        </div>
-        {detectionBoxes.map(({ detection, style }, index) => (
-          <div
-            className={`bbox ${index % 2 === 1 ? 'bbox-alt' : ''}`}
-            key={`${detection.frame_index ?? 'frame'}-${detection.object_class}-${index}`}
-            style={style}
-          >
-            <span>{formatDetectionLabel(detection)}</span>
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setViewerOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [viewerOpen])
+
+  return (
+    <>
+      <section className="frame-console panel">
+        <div className="frame-toolbar">
+          <div>
+            <p className="eyebrow">Frame Input</p>
+            <h2>{source}</h2>
           </div>
-        ))}
-        {!visibleFramePreviewUrl && (
-          <div className="stage-empty">
-            {framePreviewError ? '视频帧预览读取失败' : '等待视频帧…'}
+          <div className="frame-toolbar-actions">
+            <button
+              type="button"
+              className="icon-button"
+              title={frameHudVisible ? '隐藏画面状态条' : '显示画面状态条'}
+              aria-label={frameHudVisible ? '隐藏画面状态条' : '显示画面状态条'}
+              onClick={() => setFrameHudVisible((current) => !current)}
+            >
+              {frameHudVisible ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              title="放大预览"
+              aria-label="放大预览"
+              onClick={() => setViewerOpen(true)}
+              disabled={!visibleFramePreviewUrl}
+            >
+              <Maximize2 size={17} aria-hidden="true" />
+            </button>
+            <span className={`live-chip ${tone}`}>
+              <Activity size={15} aria-hidden="true" />
+              {captureStatus?.status ?? 'idle'}
+            </span>
           </div>
-        )}
-        <div className="frame-footer">
-          <span>{inferenceStatus?.message ?? '推理状态检测中…'} · {overlayStatus}</span>
-          <span>{captureStatus?.detections_queued ?? 0} queued</span>
         </div>
+
+        <FrameStage
+          ariaLabel="视频帧预览"
+          detectionBoxes={detectionBoxes}
+          displayFrameNumber={displayFrameNumber}
+          emptyText={framePreviewError ? '视频帧预览读取失败' : '等待视频帧…'}
+          frameHudVisible={frameHudVisible}
+          framePreviewUrl={visibleFramePreviewUrl}
+          model={model}
+          overlayStatus={overlayStatus}
+          queuedText={queuedText}
+        />
+      </section>
+
+      {viewerOpen && (
+        <div
+          className="frame-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label="放大视频帧预览"
+          onClick={() => setViewerOpen(false)}
+        >
+          <div className="frame-lightbox-shell" onClick={(event) => event.stopPropagation()}>
+            <div className="frame-lightbox-header">
+              <div>
+                <p className="eyebrow">Frame Viewer</p>
+                <strong>{source}</strong>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                title="关闭放大预览"
+                aria-label="关闭放大预览"
+                onClick={() => setViewerOpen(false)}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
+            <FrameStage
+              ariaLabel="放大视频帧预览"
+              className="frame-lightbox-stage"
+              detectionBoxes={detectionBoxes}
+              displayFrameNumber={displayFrameNumber}
+              emptyText="等待视频帧…"
+              frameHudVisible={frameHudVisible}
+              framePreviewUrl={visibleFramePreviewUrl}
+              model={model}
+              overlayStatus={overlayStatus}
+              queuedText={queuedText}
+            />
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function FrameStage({
+  ariaLabel,
+  className = '',
+  detectionBoxes,
+  displayFrameNumber,
+  emptyText,
+  frameHudVisible,
+  framePreviewUrl,
+  model,
+  overlayStatus,
+  queuedText,
+}: {
+  ariaLabel: string
+  className?: string
+  detectionBoxes: Array<{ detection: DetectionSnapshot; style: Record<string, string> }>
+  displayFrameNumber: number
+  emptyText: string
+  frameHudVisible: boolean
+  framePreviewUrl: string
+  model: string
+  overlayStatus: string
+  queuedText: string
+}) {
+  const stageClassName = ['video-stage', className, framePreviewUrl ? 'has-frame' : '']
+    .filter(Boolean)
+    .join(' ')
+
+  return (
+    <div className={stageClassName} aria-label={ariaLabel}>
+      {framePreviewUrl && (
+        <img
+          alt=""
+          className="video-frame"
+          src={framePreviewUrl}
+        />
+      )}
+      <div className="scan-grid" aria-hidden="true" />
+      <div className="frame-meta top-left">
+        <span>FRAME</span>
+        <strong>{String(displayFrameNumber).padStart(6, '0')}</strong>
       </div>
-    </section>
+      <div className="frame-meta top-right">
+        <span>MODEL</span>
+        <strong>{model}</strong>
+      </div>
+      {detectionBoxes.map(({ detection, style }, index) => (
+        <div
+          className={`bbox ${index % 2 === 1 ? 'bbox-alt' : ''}`}
+          key={`${ariaLabel}-${detection.frame_index ?? 'frame'}-${detection.object_class}-${index}`}
+          style={style}
+        >
+          <span>{formatDetectionLabel(detection)}</span>
+        </div>
+      ))}
+      {!framePreviewUrl && (
+        <div className="stage-empty">
+          {emptyText}
+        </div>
+      )}
+      {frameHudVisible && (
+        <div className="frame-footer">
+          <span>{overlayStatus}</span>
+          <span>{queuedText}</span>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1930,6 +2073,7 @@ function buildConfigDraft(
     CAPTURE_USERNAME: stringValue(capture.username),
     CAPTURE_PASSWORD: stringValue(capture.password),
     CAPTURE_FPS_LIMIT: stringValue(capture.fps_limit, '15'),
+    CAPTURE_ROTATE_DEGREES: stringValue(capture.rotate_degrees, '0'),
     CAPTURE_DEVICE_ID: stringValue(capture.device_id, '1'),
     CAPTURE_TASK_ID: stringValue(capture.task_id, '1'),
     STREAM_MODE: stringValue(stream.mode, 'pull'),

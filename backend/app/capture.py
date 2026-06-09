@@ -235,6 +235,7 @@ class CaptureManager:
                     await asyncio.sleep(0.2)
                     continue
 
+                frame = _rotate_frame(frame, runtime_settings.capture_rotate_degrees)
                 consecutive_read_failures = 0
                 frame_index = await self._bump_frame_read()
                 image_bytes = None
@@ -417,6 +418,7 @@ def _locked_settings(
         "source_kind": settings.capture_source_kind,
         "source": str(source),
         "fps_limit": settings.capture_fps_limit,
+        "rotate_degrees": settings.capture_rotate_degrees,
         "frame_interval": request.frame_interval or settings.frame_interval,
         "device_id": request.device_id or settings.capture_device_id,
         "task_id": request.task_id or settings.capture_task_id,
@@ -435,6 +437,18 @@ def _encode_jpeg(frame: Any) -> bytes | None:
     if not ok:
         return None
     return buffer.tobytes()
+
+
+def _rotate_frame(frame: Any, degrees: int) -> Any:
+    import cv2
+
+    if degrees == 90:
+        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    if degrees == 180:
+        return cv2.rotate(frame, cv2.ROTATE_180)
+    if degrees == 270:
+        return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return frame
 
 
 def _preview_interval_seconds(settings: Settings) -> float:

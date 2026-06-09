@@ -162,6 +162,13 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.frame-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .live-chip,
 .pill {
   min-height: 36px;
@@ -350,6 +357,59 @@ h3 {
   color: #dbe9ff;
   background: rgba(7, 15, 27, 0.72);
   font-size: 13px;
+}
+
+.frame-lightbox {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  padding: 18px;
+  display: grid;
+  background: rgba(8, 15, 27, 0.86);
+  backdrop-filter: blur(10px);
+}
+
+.frame-lightbox-shell {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+}
+
+.frame-lightbox-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid rgba(219, 233, 255, 0.18);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #ffffff;
+  background: rgba(7, 17, 31, 0.82);
+}
+
+.frame-lightbox-header strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.frame-lightbox-header .icon-button {
+  color: #dbe9ff;
+  border-color: rgba(219, 233, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.frame-lightbox-stage {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-color: rgba(219, 233, 255, 0.28);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
 }
 
 .pipeline-map {
@@ -1311,6 +1371,19 @@ h3 {
 
   .video-stage {
     min-height: 260px;
+  }
+
+  .frame-toolbar {
+    flex-direction: column;
+  }
+
+  .frame-toolbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .frame-lightbox {
+    padding: 10px;
   }
 
   .signal-grid,

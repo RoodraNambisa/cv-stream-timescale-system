@@ -21,6 +21,7 @@ def video_config_summary(settings: Settings) -> dict[str, Any]:
             "username": settings.capture_username,
             "password": settings.capture_password,
             "fps_limit": settings.capture_fps_limit,
+            "rotate_degrees": settings.capture_rotate_degrees,
             "device_id": settings.capture_device_id,
             "task_id": settings.capture_task_id,
         },
@@ -112,8 +113,10 @@ def _probe_video_source_sync(settings: Settings, max_frames: int) -> dict[str, A
         ok, frame = capture.read()
         if not ok:
             break
+        if frame is not None:
+            frame = _rotate_frame(frame, settings.capture_rotate_degrees, cv2)
         frame_count += 1
-        if frame is not None and (width == 0 or height == 0):
+        if frame is not None:
             height, width = frame.shape[:2]
 
     capture.release()
@@ -126,6 +129,7 @@ def _probe_video_source_sync(settings: Settings, max_frames: int) -> dict[str, A
                 "stream_mode": stream_mode,
                 "source_kind": source_kind,
                 "source": _mask_url(str(source)),
+                "rotate_degrees": settings.capture_rotate_degrees,
                 "width": width,
                 "height": height,
                 "fps": fps,
@@ -139,6 +143,7 @@ def _probe_video_source_sync(settings: Settings, max_frames: int) -> dict[str, A
             "stream_mode": stream_mode,
             "source_kind": source_kind,
             "source": _mask_url(str(source)),
+            "rotate_degrees": settings.capture_rotate_degrees,
             "frames_read": frame_count,
             "width": width,
             "height": height,
@@ -236,6 +241,16 @@ def set_capture_timeout(capture: Any, cv2: Any, timeout_ms: int) -> None:
 def set_low_latency_capture_options(capture: Any, cv2: Any) -> None:
     if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
         capture.set(getattr(cv2, "CAP_PROP_BUFFERSIZE"), 1)
+
+
+def _rotate_frame(frame: Any, degrees: int, cv2: Any) -> Any:
+    if degrees == 90:
+        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    if degrees == 180:
+        return cv2.rotate(frame, cv2.ROTATE_180)
+    if degrees == 270:
+        return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return frame
 
 
 def _mask_url(value: str) -> str:

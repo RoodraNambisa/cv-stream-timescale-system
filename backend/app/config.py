@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +16,7 @@ EDITABLE_ENV_KEYS = {
     "CAPTURE_USERNAME",
     "CAPTURE_PASSWORD",
     "CAPTURE_FPS_LIMIT",
+    "CAPTURE_ROTATE_DEGREES",
     "CAPTURE_DEVICE_ID",
     "CAPTURE_TASK_ID",
     "STREAM_MODE",
@@ -76,6 +77,7 @@ class Settings(BaseSettings):
     capture_username: str = ""
     capture_password: str = ""
     capture_fps_limit: int = 15
+    capture_rotate_degrees: int = 0
     capture_device_id: int = 1
     capture_task_id: int = 1
 
@@ -122,6 +124,13 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("capture_rotate_degrees")
+    @classmethod
+    def validate_capture_rotate_degrees(cls, value: int) -> int:
+        if value not in {0, 90, 180, 270}:
+            raise ValueError("CAPTURE_ROTATE_DEGREES must be one of 0, 90, 180, 270")
+        return value
 
 
 def update_dotenv(values: dict[str, Any]) -> list[str]:

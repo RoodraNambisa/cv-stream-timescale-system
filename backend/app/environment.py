@@ -371,6 +371,7 @@ def config_summary(settings: Settings) -> dict[str, Any]:
             "username": settings.capture_username,
             "password": settings.capture_password,
             "fps_limit": settings.capture_fps_limit,
+            "rotate_degrees": settings.capture_rotate_degrees,
             "device_id": settings.capture_device_id,
             "task_id": settings.capture_task_id,
         },
