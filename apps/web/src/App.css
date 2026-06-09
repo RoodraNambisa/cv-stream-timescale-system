@@ -647,57 +647,12 @@ h3 {
   z-index: 1;
 }
 
-.access-rail {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr) 44px minmax(0, 1.25fr);
-  align-items: center;
-  gap: 0;
-  margin-bottom: 14px;
-}
-
-.access-rail i {
-  height: 2px;
-  background: linear-gradient(90deg, #8ba3c4, #0f9f77);
-}
-
-.rail-node {
-  min-height: 74px;
-  border: 1px solid #c7d5ea;
-  border-radius: 8px;
-  display: grid;
-  align-content: center;
-  gap: 5px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 8px 22px rgba(23, 32, 51, 0.06);
-}
-
-.rail-node span,
 .field-hint {
   color: var(--muted);
   font-size: 12px;
 }
 
-.rail-node span {
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.rail-node strong {
-  color: var(--text);
-  font-size: 15px;
-  line-height: 1.22;
-  overflow-wrap: anywhere;
-}
-
-.access-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.access-column {
+.security-focus {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -705,7 +660,7 @@ h3 {
   background: rgba(255, 255, 255, 0.86);
 }
 
-.access-column-head {
+.security-focus-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -713,8 +668,10 @@ h3 {
   margin-bottom: 13px;
 }
 
-.access-fields {
+.security-fields {
   grid-template-columns: 1fr;
+  max-width: 720px;
+  margin-top: 13px;
 }
 
 .field-grid {
@@ -838,22 +795,6 @@ h3 {
 .remote-panel {
   display: grid;
   gap: 14px;
-}
-
-.frontend-api-panel {
-  display: grid;
-  gap: 14px;
-}
-
-.api-base-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 11px;
-}
-
-.api-base-actions {
-  grid-column: 1 / -1;
-  margin-top: 0;
 }
 
 .remote-password-row {
@@ -1159,25 +1100,11 @@ h3 {
   }
 
   .signal-grid,
-  .access-grid,
-  .api-base-grid,
   .config-grid,
   .config-layout,
   .remote-action-grid,
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .access-rail {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .access-rail i {
-    width: 2px;
-    height: 16px;
-    justify-self: center;
-    background: linear-gradient(180deg, #8ba3c4, #0f9f77);
   }
 
   .config-toolbar {
@@ -1210,8 +1137,6 @@ h3 {
   }
 
   .signal-grid,
-  .access-grid,
-  .api-base-grid,
   .auth-prompt-controls,
   .config-grid,
   .config-layout,

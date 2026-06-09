@@ -11,9 +11,7 @@ from .capture import CaptureManager, CaptureStartRequest
 from .config import (
     LOCKED_WHILE_CAPTURE_KEYS,
     PROJECT_ROOT,
-    Settings,
     get_settings,
-    parse_list_setting,
     preview_settings,
     reload_settings,
     update_dotenv,
@@ -46,27 +44,27 @@ async def apply_cors_and_require_api_token(request: Request, call_next):
     current_settings = get_settings()
     if request.method == "OPTIONS":
         response = JSONResponse(status_code=200, content={})
-        _add_cors_headers(request, response, current_settings)
+        _add_cors_headers(request, response)
         return response
 
     path = request.url.path
     token = current_settings.api_auth_token.strip()
     if not token or not path.startswith("/api/") or path in AUTH_EXEMPT_PATHS:
         response = await call_next(request)
-        _add_cors_headers(request, response, current_settings)
+        _add_cors_headers(request, response)
         return response
 
     provided = _request_token(request)
     if provided and secrets.compare_digest(provided, token):
         response = await call_next(request)
-        _add_cors_headers(request, response, current_settings)
+        _add_cors_headers(request, response)
         return response
 
     response = JSONResponse(
         status_code=401,
         content={"detail": "API token required"},
     )
-    _add_cors_headers(request, response, current_settings)
+    _add_cors_headers(request, response)
     return response
 
 
@@ -78,13 +76,9 @@ def _request_token(request: Request) -> str:
     return request.headers.get("x-api-key", "").strip()
 
 
-def _add_cors_headers(request: Request, response, settings: Settings) -> None:
+def _add_cors_headers(request: Request, response) -> None:
     origin = request.headers.get("origin")
     if not origin:
-        return
-
-    allowed_origins = parse_list_setting(settings.cors_allowed_origins)
-    if "*" not in allowed_origins and origin not in allowed_origins:
         return
 
     request_headers = request.headers.get(

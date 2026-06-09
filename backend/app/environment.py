@@ -364,7 +364,6 @@ def config_summary(settings: Settings) -> dict[str, Any]:
         "security": {
             "auth_required": bool(settings.api_auth_token),
             "api_auth_token": settings.api_auth_token,
-            "cors_allowed_origins": settings.cors_allowed_origins,
         },
         "capture": {
             "source_kind": settings.capture_source_kind,

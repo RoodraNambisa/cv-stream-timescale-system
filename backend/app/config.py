@@ -11,7 +11,6 @@ DOTENV_PATH = PROJECT_ROOT / ".env"
 
 EDITABLE_ENV_KEYS = {
     "API_AUTH_TOKEN",
-    "CORS_ALLOWED_ORIGINS",
     "CAPTURE_SOURCE_KIND",
     "CAPTURE_SOURCE_URL",
     "CAPTURE_USERNAME",
@@ -71,7 +70,6 @@ class Settings(BaseSettings):
     service_name: str = "cv-stream-timescale-api"
     service_version: str = "0.1.0"
     api_auth_token: str = ""
-    cors_allowed_origins: str = "http://127.0.0.1:5173 http://localhost:5173"
 
     capture_source_kind: str = "http_mjpeg"
     capture_source_url: str = ""
@@ -178,14 +176,6 @@ def parse_detection_class_filter(value: str) -> set[str]:
         for item in re.split(r"[,;，、\n]+", value or "")
         if item.strip()
     }
-
-
-def parse_list_setting(value: str) -> list[str]:
-    return [
-        item.strip()
-        for item in re.split(r"[,;，、\s]+", value or "")
-        if item.strip()
-    ]
 
 
 def _normalize_update_values(values: dict[str, Any]) -> dict[str, Any]:

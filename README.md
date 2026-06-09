@@ -115,11 +115,10 @@ API 鉴权：
 
 ```text
 API_AUTH_TOKEN=
-CORS_ALLOWED_ORIGINS="http://127.0.0.1:5173 http://localhost:5173"
 INFERENCE_API_TOKEN=
 ```
 
-`API_AUTH_TOKEN` 为空时，接口保持开发模式；设置后，除 `/api/health` 外的接口都要求 `Authorization: Bearer <token>` 或 `X-API-Key: <token>`。主页不做单独登录，React 会先打开界面；如果 API 返回 401，页面顶部会出现 token 输入条。也可以在配置页的“前端 API 连接”里保存 token，token 存在当前浏览器。前端由 FastAPI 同端口托管时不需要 CORS；`CORS_ALLOWED_ORIGINS` 只用于浏览器从 `5173` 或其他 Origin 直连 API。`INFERENCE_API_TOKEN` 用于当前后端调用受保护的远端推理 API。
+`API_AUTH_TOKEN` 为空时，接口保持开发模式；设置后，除 `/api/health` 外的接口都要求 `Authorization: Bearer <token>` 或 `X-API-Key: <token>`。主页不做单独登录，React 会先打开界面；如果 API 返回 401，页面顶部会出现 token 输入条。后端允许浏览器从任意 Origin 发起 CORS 请求，接口访问仍由 token 控制。`INFERENCE_API_TOKEN` 用于当前后端调用受保护的远端推理 API。
 
 检测结果缓存接口：
 
@@ -221,7 +220,6 @@ cp .env.example .env
 系统按配置组合采集、推理和存储：
 
 - `CAPTURE_SOURCE_KIND`：`http_mjpeg`、`rtsp`、`rtmp`、`camera`、`file`
-- `CORS_ALLOWED_ORIGINS`：允许浏览器直连 API 的前端 Origin
 - `CAPTURE_SOURCE_URL`：视频源地址
 - `STREAM_MODE`：`pull` 或 `push`
 - `STREAM_RECEIVER_KIND`：`none`、`mediamtx`、`nginx_rtmp` 或 `custom`
@@ -235,7 +233,7 @@ cp .env.example .env
 - `GRAFANA_BASE_URL`：可选 Grafana 地址，环境检测会访问 `/api/health`
 - `GRAFANA_DASHBOARD_URL`：可选 Grafana 面板地址，前端配置页会保留该链接
 
-前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`API_AUTH_TOKEN` 保护当前 FastAPI 入站接口。`REMOTE_API_BASE_URL` 是前端可访问的远端 API 直连入口，环境检测会访问它的 `/api/health`。浏览器直连远端 API 时，远端 `.env` 的 `CORS_ALLOWED_ORIGINS` 要包含当前前端地址，例如 `http://127.0.0.1:5173` 或部署后的前端地址。`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制远端 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测运行环境、同步项目、安装依赖、配库、启动或停止远端 API。`REMOTE_PIP_INDEX_URLS`、`REMOTE_PIP_TRUSTED_HOSTS` 和 `REMOTE_PIP_PROXY` 只影响远端依赖安装。
+前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`API_AUTH_TOKEN` 保护当前 FastAPI 入站接口。`REMOTE_API_BASE_URL` 是前端可访问的远端 API 直连入口，环境检测会访问它的 `/api/health`。`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制远端 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测运行环境、同步项目、安装依赖、配库、启动或停止远端 API。`REMOTE_PIP_INDEX_URLS`、`REMOTE_PIP_TRUSTED_HOSTS` 和 `REMOTE_PIP_PROXY` 只影响远端依赖安装。
 
 Grafana 是可选观测入口。React 分析页已经能展示类别分布、时间桶和统计元数据；如果你部署了 Grafana，可以让它直接读取同一个 PostgreSQL/TimescaleDB，再把 `GRAFANA_BASE_URL` 和 `GRAFANA_DASHBOARD_URL` 写入配置，环境检测会显示 Grafana 是否可达。
 

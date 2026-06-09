@@ -50,12 +50,10 @@ import {
   getApiAuthToken,
   getApiBaseUrl,
   probeEnvironment,
-  probeApiBaseUrl,
   probeVideo,
   reloadConfig,
   runRemoteAction,
   setApiAuthToken,
-  setApiBaseUrl,
   startCapture,
   stopCapture,
   updateConfig,
@@ -147,13 +145,6 @@ const accessConfigGroup: ConfigGroup = {
       sensitive: true,
       placeholder: '留空关闭接口鉴权…',
       helper: '保存到服务端配置；启用后，除健康检查外的接口都需要 Bearer token。',
-    },
-    {
-      key: 'CORS_ALLOWED_ORIGINS',
-      label: '允许访问的前端 Origin',
-      input: 'text',
-      placeholder: 'http://127.0.0.1:5173 http://localhost:5173…',
-      helper: '多个 Origin 用空格分隔；同源部署通常不用额外调整。',
     },
   ],
 }
@@ -340,7 +331,7 @@ const remoteActions: Array<{ action: RemoteAction; label: string; icon: typeof A
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>(() => getTabFromLocation())
-  const [frontendApiBase, setFrontendApiBase] = useState(() => getApiBaseUrl())
+  const [frontendApiBase] = useState(() => getApiBaseUrl())
   const [frontendApiToken, setFrontendApiToken] = useState(() => getApiAuthToken())
   const [quickTokenDraft, setQuickTokenDraft] = useState(frontendApiToken)
   const [quickTokenVisible, setQuickTokenVisible] = useState(false)
@@ -488,13 +479,6 @@ function App() {
   function handleTabChange(tab: TabKey) {
     setActiveTab(tab)
     writeTabToUrl(tab, 'push')
-  }
-
-  function handleFrontendApiBaseChange(value: string): string {
-    const normalized = setApiBaseUrl(value)
-    setFrontendApiBase(normalized)
-    void queryClient.invalidateQueries()
-    return normalized
   }
 
   function handleFrontendApiTokenChange(value: string): string {
@@ -667,10 +651,6 @@ function App() {
           savePending={updateConfigMutation.isPending}
           saveResult={updateConfigMutation.data}
           saveError={updateConfigMutation.error?.message}
-          frontendApiBase={frontendApiBase}
-          frontendApiToken={frontendApiToken}
-          onFrontendApiBaseChange={handleFrontendApiBaseChange}
-          onFrontendApiTokenChange={handleFrontendApiTokenChange}
           onRemoteAction={(action, payload) => remoteMutation.mutate({ action, payload })}
           remotePending={remoteMutation.isPending}
           remoteResult={remoteMutation.data}
@@ -944,10 +924,6 @@ function ConfigPage({
   savePending,
   saveResult,
   saveError,
-  frontendApiBase,
-  frontendApiToken,
-  onFrontendApiBaseChange,
-  onFrontendApiTokenChange,
   onRemoteAction,
   remotePending,
   remoteResult,
@@ -967,10 +943,6 @@ function ConfigPage({
   savePending: boolean
   saveResult?: Record<string, unknown>
   saveError?: string
-  frontendApiBase: string
-  frontendApiToken: string
-  onFrontendApiBaseChange: (value: string) => string
-  onFrontendApiTokenChange: (value: string) => string
   onRemoteAction: (action: RemoteAction, payload?: { remote_db_password?: string }) => void
   remotePending: boolean
   remoteResult?: Record<string, unknown>
@@ -980,35 +952,12 @@ function ConfigPage({
   const [draft, setDraft] = useState<ConfigDraft>({})
   const [dirty, setDirty] = useState(false)
   const [remoteDbPassword, setRemoteDbPassword] = useState('')
-  const [apiBaseDraftState, setApiBaseDraftState] = useState(() => ({
-    source: frontendApiBase,
-    value: frontendApiBase,
-  }))
-  const [apiTokenDraftState, setApiTokenDraftState] = useState(() => ({
-    source: frontendApiToken,
-    value: frontendApiToken,
-  }))
-  const [apiTokenVisible, setApiTokenVisible] = useState(false)
   const [revealedFields, setRevealedFields] = useState<Set<string>>(() => new Set())
-  const [apiBasePending, setApiBasePending] = useState(false)
-  const [apiBaseMessage, setApiBaseMessage] = useState('')
   const visibleDraft = dirty ? draft : currentDraft
-  const apiBaseDraft = apiBaseDraftState.source === frontendApiBase ? apiBaseDraftState.value : frontendApiBase
-  const apiTokenDraft = apiTokenDraftState.source === frontendApiToken ? apiTokenDraftState.value : frontendApiToken
-  const configuredRemoteApiBase = visibleDraft.REMOTE_API_BASE_URL ?? ''
   const serverTokenConfigured = Boolean((visibleDraft.API_AUTH_TOKEN ?? '').trim())
-  const browserTokenConfigured = Boolean(frontendApiToken.trim())
-  const browserApiMode = frontendApiBase ? '直连 API' : '同源 /api'
-  const accessTone = serverTokenConfigured
-    ? browserTokenConfigured
-      ? 'ok'
-      : 'warn'
-    : 'ok'
   const accessMessage = serverTokenConfigured
-    ? browserTokenConfigured
-      ? '服务端已启用鉴权，当前浏览器会自动携带 Bearer token。'
-      : '服务端已启用鉴权；需要在当前浏览器保存同一个 token 才能访问受保护接口。'
-    : '服务端未启用接口鉴权；当前浏览器不需要保存 token。'
+    ? '服务端已启用鉴权，除健康检查外的 API 都需要 Bearer token。'
+    : '服务端未启用接口鉴权；填写 token 后保存即可开启。'
 
   useEffect(() => {
     if (!dirty) {
@@ -1048,22 +997,6 @@ function ConfigPage({
     onRemoteAction(action, payload)
   }
 
-  function saveFrontendApiBase(value = apiBaseDraft) {
-    try {
-      const normalized = onFrontendApiBaseChange(value)
-      setApiBaseDraftState({ source: normalized, value: normalized })
-      setApiBaseMessage(normalized ? `前端请求已切到 ${normalized}` : '前端已恢复同源 /api')
-    } catch (error) {
-      setApiBaseMessage(error instanceof Error ? error.message : 'API 地址无效')
-    }
-  }
-
-  function saveFrontendApiToken() {
-    const token = onFrontendApiTokenChange(apiTokenDraft)
-    setApiTokenDraftState({ source: token, value: token })
-    setApiBaseMessage(token ? '浏览器令牌已保存' : '浏览器令牌已清除')
-  }
-
   function toggleSensitiveField(key: string) {
     setRevealedFields((current) => {
       const next = new Set(current)
@@ -1074,18 +1007,6 @@ function ConfigPage({
       }
       return next
     })
-  }
-
-  async function testFrontendApiBase() {
-    setApiBasePending(true)
-    try {
-      const result = await probeApiBaseUrl(apiBaseDraft)
-      setApiBaseMessage(`${result.service} ${result.status}`)
-    } catch (error) {
-      setApiBaseMessage(error instanceof Error ? error.message : 'API 检测失败')
-    } finally {
-      setApiBasePending(false)
-    }
   }
 
   function renderConfigField(field: ConfigField, className?: string) {
@@ -1116,145 +1037,20 @@ function ConfigPage({
       <div className="panel access-panel full-config">
         <PanelHeading eyebrow={accessConfigGroup.eyebrow} title={accessConfigGroup.title} icon={ShieldCheck} />
 
-        <div className="access-rail" aria-label="浏览器到后端接口的连接状态">
-          <div className="rail-node">
-            <span>Browser</span>
-            <strong>{browserApiMode}</strong>
+        <div className="security-focus">
+          <div className="security-focus-head">
+            <div>
+              <p className="eyebrow">Server Rule</p>
+              <h3>服务端接口保护</h3>
+            </div>
+            <span className={`mini-status ${serverTokenConfigured ? 'ok' : 'warn'}`}>
+              {serverTokenConfigured ? '已启用' : '未启用'}
+            </span>
           </div>
-          <i aria-hidden="true" />
-          <div className="rail-node">
-            <span>Auth</span>
-            <strong>{serverTokenConfigured ? '服务端要求 Bearer' : '未启用'}</strong>
+          <div className={`notice ${serverTokenConfigured ? 'ok' : 'warn'}`}>{accessMessage}</div>
+          <div className="field-grid security-fields">
+            {accessConfigGroup.fields.map((field) => renderConfigField(field))}
           </div>
-          <i aria-hidden="true" />
-          <div className="rail-node">
-            <span>API</span>
-            <strong>{frontendApiBase || '当前域名 /api'}</strong>
-          </div>
-        </div>
-
-        <div className={`notice ${accessTone}`}>{accessMessage}</div>
-
-        <div className="access-grid">
-          <section className="access-column">
-            <div className="access-column-head">
-              <div>
-                <p className="eyebrow">Server Rule</p>
-                <h3>服务端接口保护</h3>
-              </div>
-              <span className={`mini-status ${serverTokenConfigured ? 'ok' : 'warn'}`}>
-                {serverTokenConfigured ? '已启用' : '未启用'}
-              </span>
-            </div>
-            <div className="field-grid access-fields">
-              {accessConfigGroup.fields.map((field) => renderConfigField(field))}
-            </div>
-          </section>
-
-          <section className="access-column">
-            <div className="access-column-head">
-              <div>
-                <p className="eyebrow">Current Browser</p>
-                <h3>当前浏览器请求凭证</h3>
-              </div>
-              <span className={`mini-status ${browserTokenConfigured ? 'ok' : serverTokenConfigured ? 'warn' : 'ok'}`}>
-                {browserTokenConfigured ? '已保存' : serverTokenConfigured ? '待填写' : '不需要'}
-              </span>
-            </div>
-            <div className="field-grid access-fields">
-              <div className="config-field field-span-full">
-                <div className="field-head">
-                  <label htmlFor="frontend-api-base-url">浏览器 API Base URL</label>
-                  <small>{frontendApiBase ? '自定义' : '默认'}</small>
-                </div>
-                <input
-                  autoComplete="off"
-                  id="frontend-api-base-url"
-                  inputMode="url"
-                  name="FRONTEND_API_BASE_URL"
-                  spellCheck={false}
-                  type="url"
-                  value={apiBaseDraft}
-                  placeholder="留空使用当前域名 /api，或填写 http://API_HOST:8000…"
-                  onChange={(event) => setApiBaseDraftState({ source: frontendApiBase, value: event.target.value })}
-                />
-                <p className="field-hint">
-                  只保存在当前浏览器；本服务单端口部署时保持空即可。
-                </p>
-              </div>
-
-              <div className="config-field field-span-full">
-                <div className="field-head">
-                  <label htmlFor="frontend-api-auth-token">当前浏览器 Bearer token</label>
-                  <small>{frontendApiToken ? '已保存' : '未保存'}</small>
-                </div>
-                <div className="secret-input">
-                  <input
-                    autoComplete="off"
-                    id="frontend-api-auth-token"
-                    inputMode="text"
-                    name="FRONTEND_API_AUTH_TOKEN"
-                    spellCheck={false}
-                    type={apiTokenVisible ? 'text' : 'password'}
-                    value={apiTokenDraft}
-                    placeholder="填写服务端 API_AUTH_TOKEN 后保存到浏览器…"
-                    onChange={(event) => setApiTokenDraftState({ source: frontendApiToken, value: event.target.value })}
-                  />
-                  <button
-                    type="button"
-                    aria-label={apiTokenVisible ? '隐藏当前浏览器 token' : '显示当前浏览器 token'}
-                    className="icon-button"
-                    title={apiTokenVisible ? '隐藏' : '显示'}
-                    onClick={() => setApiTokenVisible((current) => !current)}
-                  >
-                    {apiTokenVisible ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
-                  </button>
-                </div>
-                <p className="field-hint">
-                  这个值不会写入服务端配置，只会随当前浏览器的 API 请求发送。
-                </p>
-              </div>
-            </div>
-            <div className="action-row api-base-actions">
-              <button type="button" onClick={testFrontendApiBase} disabled={apiBasePending}>
-                <ShieldCheck size={17} aria-hidden="true" />
-                检测 API
-              </button>
-              <button type="button" onClick={() => saveFrontendApiBase()}>
-                <Save size={17} aria-hidden="true" />
-                保存浏览器连接
-              </button>
-              <button type="button" onClick={saveFrontendApiToken} disabled={!apiTokenDraft}>
-                <ShieldCheck size={17} aria-hidden="true" />
-                保存浏览器令牌
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setApiTokenDraftState({ source: '', value: '' })
-                  onFrontendApiTokenChange('')
-                  setApiBaseMessage('浏览器令牌已清除')
-                }}
-                disabled={!frontendApiToken && !apiTokenDraft}
-              >
-                <RotateCw size={17} aria-hidden="true" />
-                清除令牌
-              </button>
-              <button
-                type="button"
-                onClick={() => saveFrontendApiBase(configuredRemoteApiBase)}
-                disabled={!configuredRemoteApiBase}
-              >
-                <Server size={17} aria-hidden="true" />
-                使用配置中的 API
-              </button>
-              <button type="button" onClick={() => saveFrontendApiBase('')} disabled={!frontendApiBase && !apiBaseDraft}>
-                <RotateCw size={17} aria-hidden="true" />
-                恢复同源
-              </button>
-              {apiBaseMessage && <span className="action-result" aria-live="polite">{apiBaseMessage}</span>}
-            </div>
-          </section>
         </div>
       </div>
 
@@ -1776,10 +1572,6 @@ function buildConfigDraft(
 
   return {
     API_AUTH_TOKEN: stringValue(security.api_auth_token),
-    CORS_ALLOWED_ORIGINS: stringValue(
-      security.cors_allowed_origins,
-      'http://127.0.0.1:5173 http://localhost:5173',
-    ),
     CAPTURE_SOURCE_KIND: stringValue(capture.source_kind, 'http_mjpeg'),
     CAPTURE_SOURCE_URL: stringValue(capture.source_url),
     CAPTURE_USERNAME: stringValue(capture.username),
