@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=remote_common.sh
 . "$ROOT_DIR/scripts/remote_common.sh"
 
-echo "Syncing $ROOT_DIR to $REMOTE_LOGIN@$REMOTE_HOST:$REMOTE_PROJECT_DIR"
+echo "Syncing project to configured remote directory"
 
 COPYFILE_DISABLE=1 tar \
   --no-xattrs \
@@ -38,4 +38,4 @@ COPYFILE_DISABLE=1 tar \
       mkdir -p '$REMOTE_PROJECT_DIR/runtime'
     "
 
-remote_ssh "cd '$REMOTE_PROJECT_DIR' && find . -maxdepth 2 -type f | wc -l"
+remote_ssh "cd '$REMOTE_PROJECT_DIR' && printf 'remote file count: ' && find . -maxdepth 2 -type f | wc -l"

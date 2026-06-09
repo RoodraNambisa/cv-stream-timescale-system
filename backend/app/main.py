@@ -2,13 +2,22 @@ import secrets
 from typing import Any, Optional
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from .analysis import analysis_summary
 from .capture import CaptureManager, CaptureStartRequest
-from .config import LOCKED_WHILE_CAPTURE_KEYS, get_settings, preview_settings, reload_settings, update_dotenv
+from .config import (
+    LOCKED_WHILE_CAPTURE_KEYS,
+    PROJECT_ROOT,
+    Settings,
+    get_settings,
+    parse_list_setting,
+    preview_settings,
+    reload_settings,
+    update_dotenv,
+)
 from .detections import DetectionBatch, DetectionRecord
 from .environment import collect_environment, config_summary
 from .inference import infer_image_bytes, inference_status
@@ -20,6 +29,7 @@ settings = get_settings()
 spool = DetectionSpool()
 capture = CaptureManager(spool)
 AUTH_EXEMPT_PATHS = {"/api/health"}
+WEB_DIST_DIR = PROJECT_ROOT / "apps" / "web" / "dist"
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -31,33 +41,33 @@ app = FastAPI(
     version=settings.service_version,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 @app.middleware("http")
-async def require_api_token(request: Request, call_next):
+async def apply_cors_and_require_api_token(request: Request, call_next):
+    current_settings = get_settings()
     if request.method == "OPTIONS":
-        return await call_next(request)
+        response = JSONResponse(status_code=200, content={})
+        _add_cors_headers(request, response, current_settings)
+        return response
 
     path = request.url.path
-    token = get_settings().api_auth_token.strip()
+    token = current_settings.api_auth_token.strip()
     if not token or not path.startswith("/api/") or path in AUTH_EXEMPT_PATHS:
-        return await call_next(request)
+        response = await call_next(request)
+        _add_cors_headers(request, response, current_settings)
+        return response
 
     provided = _request_token(request)
     if provided and secrets.compare_digest(provided, token):
-        return await call_next(request)
+        response = await call_next(request)
+        _add_cors_headers(request, response, current_settings)
+        return response
 
-    return JSONResponse(
+    response = JSONResponse(
         status_code=401,
         content={"detail": "API token required"},
     )
+    _add_cors_headers(request, response, current_settings)
+    return response
 
 
 def _request_token(request: Request) -> str:
@@ -66,6 +76,25 @@ def _request_token(request: Request) -> str:
         return authorization[7:].strip()
 
     return request.headers.get("x-api-key", "").strip()
+
+
+def _add_cors_headers(request: Request, response, settings: Settings) -> None:
+    origin = request.headers.get("origin")
+    if not origin:
+        return
+
+    allowed_origins = parse_list_setting(settings.cors_allowed_origins)
+    if "*" not in allowed_origins and origin not in allowed_origins:
+        return
+
+    request_headers = request.headers.get(
+        "access-control-request-headers",
+        "Authorization, X-API-Key, Content-Type",
+    )
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = request_headers
 
 
 @app.on_event("startup")
@@ -226,3 +255,7 @@ async def infer_image(file: UploadFile = File(...)) -> dict:
 @app.post("/api/remote/{action}")
 async def remote_action(action: str, request: Optional[RemoteActionRequest] = None) -> dict:
     return await run_remote_action(action, get_settings(), request)
+
+
+if WEB_DIST_DIR.exists():
+    app.mount("/", StaticFiles(directory=WEB_DIST_DIR, html=True), name="web")

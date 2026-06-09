@@ -7,6 +7,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 remote_ssh "
   set -e
-  true
-  pg_lsclusters
+  $REMOTE_POSTGRES_START_SCRIPT
+  echo 'postgres clusters checked'
 "

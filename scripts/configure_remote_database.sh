@@ -22,17 +22,26 @@ fi
 
 REMOTE_DB_PASSWORD_B64="$(printf '%s' "$REMOTE_DB_PASSWORD" | base64 | tr -d '\n')"
 REMOTE_API_AUTH_TOKEN_B64="$(printf '%s' "${REMOTE_API_AUTH_TOKEN:-}" | base64 | tr -d '\n')"
+REMOTE_CORS_ALLOWED_ORIGINS_B64="$(printf '%s' "${REMOTE_CORS_ALLOWED_ORIGINS:-http://127.0.0.1:5173 http://localhost:5173}" | base64 | tr -d '\n')"
 export REMOTE_DB_PASSWORD_B64
 export REMOTE_API_AUTH_TOKEN_B64
-REMOTE_DB_PUBLIC_HOST="${REMOTE_DB_PUBLIC_HOST:-REMOTE_HOST}"
+export REMOTE_CORS_ALLOWED_ORIGINS_B64
+REMOTE_DB_PUBLIC_HOST="${REMOTE_DB_PUBLIC_HOST:-${REMOTE_HOST:-127.0.0.1}}"
 REMOTE_DB_PUBLIC_PORT="${REMOTE_DB_PUBLIC_PORT:-5432}"
 
-ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" "REMOTE_PROJECT_DIR='$REMOTE_PROJECT_DIR' REMOTE_DB_PASSWORD_B64='$REMOTE_DB_PASSWORD_B64' REMOTE_API_AUTH_TOKEN_B64='$REMOTE_API_AUTH_TOKEN_B64' bash -s" <<'REMOTE_SCRIPT'
+ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" "REMOTE_PROJECT_DIR='$REMOTE_PROJECT_DIR' REMOTE_DB_PASSWORD_B64='$REMOTE_DB_PASSWORD_B64' REMOTE_API_AUTH_TOKEN_B64='$REMOTE_API_AUTH_TOKEN_B64' REMOTE_CORS_ALLOWED_ORIGINS_B64='$REMOTE_CORS_ALLOWED_ORIGINS_B64' bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 
 REMOTE_DB_PASSWORD="$(printf '%s' "$REMOTE_DB_PASSWORD_B64" | base64 -d)"
 REMOTE_API_AUTH_TOKEN="$(printf '%s' "$REMOTE_API_AUTH_TOKEN_B64" | base64 -d)"
-true
+REMOTE_CORS_ALLOWED_ORIGINS="$(printf '%s' "$REMOTE_CORS_ALLOWED_ORIGINS_B64" | base64 -d)"
+if command -v pg_lsclusters >/dev/null 2>&1 && command -v pg_ctlcluster >/dev/null 2>&1; then
+  pg_lsclusters --no-header | while read -r pg_version pg_name _; do
+    if [ -n "$pg_version" ] && [ -n "$pg_name" ]; then
+      pg_ctlcluster "$pg_version" "$pg_name" start >/dev/null 2>&1 || true
+    fi
+  done
+fi
 mkdir -p "$REMOTE_PROJECT_DIR/runtime"
 
 runuser -u postgres -- createdb cv_stream 2>/dev/null || true
@@ -60,6 +69,7 @@ cat > "$REMOTE_PROJECT_DIR/.env" <<REMOTE_ENV
 SERVICE_NAME=cv-stream-timescale-api
 SERVICE_VERSION=0.1.0
 API_AUTH_TOKEN=${REMOTE_API_AUTH_TOKEN}
+CORS_ALLOWED_ORIGINS="${REMOTE_CORS_ALLOWED_ORIGINS}"
 CAPTURE_SOURCE_KIND=http_mjpeg
 CAPTURE_SOURCE_URL=
 CAPTURE_USERNAME=
@@ -84,10 +94,10 @@ DATABASE_BATCH_SIZE=50
 DATABASE_FLUSH_INTERVAL_MS=1000
 SPOOL_SQLITE_PATH=runtime/spool.db
 REMOTE_API_BASE_URL=
-REMOTE_API_HOST=127.0.0.1
+REMOTE_API_HOST=${REMOTE_API_HOST:-0.0.0.0}
 REMOTE_API_PORT=8000
 REMOTE_SSH_HOST=
-REMOTE_SSH_PORT=22
+REMOTE_SSH_PORT=${REMOTE_PORT:-22}
 REMOTE_SSH_USER=
 REMOTE_SSH_KEY_PATH=
 REMOTE_ENV
@@ -101,8 +111,16 @@ cat > "$ROOT_DIR/runtime/remote_database.env" <<LOCAL_ENV
 DATABASE_URL=postgresql://cv_user:${REMOTE_DB_PASSWORD}@${REMOTE_DB_PUBLIC_HOST}:${REMOTE_DB_PUBLIC_PORT}/cv_stream
 SERVER_DATABASE_URL=postgresql://cv_user:${REMOTE_DB_PASSWORD}@127.0.0.1:5432/cv_stream
 REMOTE_API_AUTH_TOKEN=${REMOTE_API_AUTH_TOKEN:-}
+REMOTE_CORS_ALLOWED_ORIGINS="${REMOTE_CORS_ALLOWED_ORIGINS:-http://127.0.0.1:5173 http://localhost:5173}"
+REMOTE_API_HOST=${REMOTE_API_HOST:-0.0.0.0}
+REMOTE_API_PORT=8000
+REMOTE_HOST=${REMOTE_HOST:-}
+REMOTE_LOGIN=${REMOTE_LOGIN:-}
+REMOTE_PORT=${REMOTE_PORT:-22}
+REMOTE_KEY=${REMOTE_KEY:-}
 LOCAL_ENV
 chmod 600 "$ROOT_DIR/runtime/remote_database.env"
 
 echo "database password source: $PASSWORD_SOURCE"
+echo "remote environment file written"
 echo "local ignored direct database env: runtime/remote_database.env"

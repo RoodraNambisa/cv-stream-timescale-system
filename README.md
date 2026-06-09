@@ -17,7 +17,7 @@
 
 - 前端依赖安装在 `apps/web/node_modules`
 - Python 依赖安装在仓库根目录 `.venv`
-- 服务器推理直接使用已有 `configured Python environment` CUDA 环境
+- 服务器推理使用运行时配置指定的 conda/Python 环境
 
 ## 本地启动
 
@@ -49,16 +49,23 @@ scripts/local_api_smoke_check.sh
 
 该脚本临时接管 `.env` 并在结束时恢复，直接请求 FastAPI 接口，覆盖配置热重载、运行锁定、spool 入队、无数据库 flush、分析接口、本地推理接口和采集状态。
 
-启动 FastAPI：
+开发态启动 FastAPI：
 
 ```bash
 scripts/run_backend.sh
 ```
 
-启动 React 监控台：
+开发态启动 React 监控台：
 
 ```bash
 scripts/run_web.sh
+```
+
+Vite 只用于本地开发热更新。部署时先构建前端，再启动 FastAPI；后端会在 `apps/web/dist` 存在时用同一个端口托管 React：
+
+```bash
+npm --prefix apps/web run build
+scripts/run_backend.sh
 ```
 
 命令行采集入口：
@@ -68,10 +75,16 @@ scripts/run_web.sh
 python phone_stream_cv.py --max-frames 300 --frame-interval 10
 ```
 
-前端默认访问：
+开发态前端地址：
 
 ```text
 http://127.0.0.1:5173
+```
+
+单端口地址：
+
+```text
+http://127.0.0.1:8000/
 ```
 
 后端健康检查：
@@ -102,10 +115,11 @@ API 鉴权：
 
 ```text
 API_AUTH_TOKEN=
+CORS_ALLOWED_ORIGINS="http://127.0.0.1:5173 http://localhost:5173"
 INFERENCE_API_TOKEN=
 ```
 
-`API_AUTH_TOKEN` 为空时，接口保持开发模式；设置后，除 `/api/health` 外的接口都要求 `Authorization: Bearer <token>` 或 `X-API-Key: <token>`。`INFERENCE_API_TOKEN` 用于当前后端调用受保护的远端推理 API。
+`API_AUTH_TOKEN` 为空时，接口保持开发模式；设置后，除 `/api/health` 外的接口都要求 `Authorization: Bearer <token>` 或 `X-API-Key: <token>`。主页不做单独登录，React 会先打开界面；如果 API 返回 401，页面顶部会出现 token 输入条。也可以在配置页的“前端 API 连接”里保存 token，token 存在当前浏览器。前端由 FastAPI 同端口托管时不需要 CORS；`CORS_ALLOWED_ORIGINS` 只用于浏览器从 `5173` 或其他 Origin 直连 API。`INFERENCE_API_TOKEN` 用于当前后端调用受保护的远端推理 API。
 
 检测结果缓存接口：
 
@@ -207,6 +221,7 @@ cp .env.example .env
 系统按配置组合采集、推理和存储：
 
 - `CAPTURE_SOURCE_KIND`：`http_mjpeg`、`rtsp`、`rtmp`、`camera`、`file`
+- `CORS_ALLOWED_ORIGINS`：允许浏览器直连 API 的前端 Origin
 - `CAPTURE_SOURCE_URL`：视频源地址
 - `STREAM_MODE`：`pull` 或 `push`
 - `STREAM_RECEIVER_KIND`：`none`、`mediamtx`、`nginx_rtmp` 或 `custom`
@@ -220,7 +235,7 @@ cp .env.example .env
 - `GRAFANA_BASE_URL`：可选 Grafana 地址，环境检测会访问 `/api/health`
 - `GRAFANA_DASHBOARD_URL`：可选 Grafana 面板地址，前端配置页会保留该链接
 
-前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`API_AUTH_TOKEN` 保护当前 FastAPI 入站接口。`REMOTE_API_BASE_URL` 是本地或前端可访问的远端 API 直连入口，环境检测会访问它的 `/api/health`。`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制服务器上 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测服务器、同步项目、安装依赖、配库、启动或停止远端 API。`REMOTE_PIP_INDEX_URLS`、`REMOTE_PIP_TRUSTED_HOSTS` 和 `REMOTE_PIP_PROXY` 只影响远端依赖安装。
+前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`API_AUTH_TOKEN` 保护当前 FastAPI 入站接口。`REMOTE_API_BASE_URL` 是本地或前端可访问的远端 API 直连入口，环境检测会访问它的 `/api/health`。浏览器直连远端 API 时，远端 `.env` 的 `CORS_ALLOWED_ORIGINS` 要包含当前前端地址，例如 `http://127.0.0.1:5173` 或服务器上的前端地址。`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制服务器上 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测服务器、同步项目、安装依赖、配库、启动或停止远端 API。`REMOTE_PIP_INDEX_URLS`、`REMOTE_PIP_TRUSTED_HOSTS` 和 `REMOTE_PIP_PROXY` 只影响远端依赖安装。
 
 Grafana 是可选观测入口。React 分析页已经能展示类别分布、时间桶和统计元数据；如果你部署了 Grafana，可以让它直接读取同一个 PostgreSQL/TimescaleDB，再把 `GRAFANA_BASE_URL` 和 `GRAFANA_DASHBOARD_URL` 写入配置，环境检测会显示 Grafana 是否可达。
 
@@ -233,6 +248,14 @@ deploy/env/server-all.env.example
 ```
 
 这些文件只提供可复制的键值组合，不引入固定运行模式。按实际链路把需要的键复制进 `.env`，再通过配置页或 `POST /api/config/reload` 让后端重载。数据库、远端推理 API、MediaMTX/nginx-rtmp 和 Grafana 都按各自 URL 直连；SSH 仍然只是可选管理通道。
+
+## 端口
+
+开发态常用两个本机端口：FastAPI 默认 `8000`，Vite 默认 `5173`。部署态先构建前端，再让 FastAPI 托管 `apps/web/dist`，浏览器和 API 共用 FastAPI 入口。
+
+可选组件按各自服务暴露端口：PostgreSQL/TimescaleDB 默认 `5432`，MediaMTX 常用 RTSP `8554`、RTMP `1935`、API `9997`，nginx-rtmp 常用 RTMP `1935` 和 stat 页面，Grafana 默认 `3000`，Android IP Webcam 通常由手机提供 HTTP 视频地址。服务器平台的外部转发端口不写入仓库文档；把实际地址写进本地忽略的 `.env` 或 `runtime/remote_connection.env`。
+
+远端单端口部署时，`REMOTE_API_HOST=0.0.0.0` 用于服务器进程监听。浏览器访问平台提供的 FastAPI 外部地址即可打开前端；采集端远端推理也写同一个 API 地址。如果 API 只监听 `127.0.0.1`，外部浏览器无法直接访问。
 
 可选组件模板：
 
@@ -264,6 +287,20 @@ dashboard JSON 包含检测时间桶、类别 Top、分钟置信度和最近检�
 
 运行时写库只看 `DATABASE_URL`，后端通过 PostgreSQL 协议直接连接本地或远端数据库。SSH 配库只负责创建用户、启动服务、应用 schema、写服务器 `.env`，不参与正常检测数据写入。只有在平台允许端口转发且数据库无法直连时，才把 SSH 隧道当作临时诊断方案。
 
+## 远端连接参数
+
+远端脚本从环境变量或本地忽略文件读取 SSH、项目目录、Python 路径和平台映射地址。推荐创建 `runtime/remote_connection.env`：
+
+```text
+REMOTE_HOST=服务器地址
+REMOTE_LOGIN=SSH 登录名
+REMOTE_PORT=SSH 端口
+REMOTE_KEY=SSH 私钥路径
+REMOTE_PROJECT_DIR=/服务器上的项目目录
+REMOTE_PYTHON=/服务器上的 Python
+```
+
+`runtime/remote_connection.env` 不提交。服务器平台分配的外部端口、账号和私钥路径只放在本地忽略文件或 shell 环境变量里。
 
 ## 远端联调
 
@@ -384,7 +421,7 @@ INFERENCE_API_TOKEN=远端API令牌
 DATABASE_URL=postgresql://cv_user:密码@数据库主机:5432/cv_stream
 ```
 
-服务器完整运行时，编辑服务器上的：
+服务器完整运行时，编辑服务器项目目录下的：
 
 ```text
 REMOTE_PROJECT_DIR/.env

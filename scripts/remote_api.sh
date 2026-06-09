@@ -12,7 +12,7 @@ case "$ACTION" in
       set -e
       cd '$REMOTE_PROJECT_DIR'
       test -f .env || { echo 'missing remote .env; run scripts/configure_remote_database.sh first' >&2; exit 1; }
-      true
+      $REMOTE_POSTGRES_START_SCRIPT
       mkdir -p runtime
       if [ -f runtime/remote_api.pid ] && kill -0 \$(cat runtime/remote_api.pid) >/dev/null 2>&1; then
         echo 'remote api already running'
@@ -25,7 +25,7 @@ case "$ACTION" in
 import json
 import urllib.request
 
-with urllib.request.urlopen('http://$REMOTE_API_HOST:$REMOTE_API_PORT/api/health', timeout=5) as response:
+with urllib.request.urlopen('http://$REMOTE_API_HEALTH_HOST:$REMOTE_API_PORT/api/health', timeout=5) as response:
     print(json.dumps(json.load(response), ensure_ascii=False))
 PY
     "
@@ -58,7 +58,7 @@ import urllib.error
 import urllib.request
 
 try:
-    with urllib.request.urlopen('http://$REMOTE_API_HOST:$REMOTE_API_PORT/api/health', timeout=3) as response:
+    with urllib.request.urlopen('http://$REMOTE_API_HEALTH_HOST:$REMOTE_API_PORT/api/health', timeout=3) as response:
         print(json.dumps(json.load(response), ensure_ascii=False))
 except urllib.error.URLError as exc:
     print('health_check_failed', exc)

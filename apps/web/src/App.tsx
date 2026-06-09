@@ -140,6 +140,7 @@ const configGroups: ConfigGroup[] = [
     accent: 'accent-security',
     fields: [
       { key: 'API_AUTH_TOKEN', label: '入站 API token', input: 'password', sensitive: true, placeholder: '设置后保护除健康检查外的 API…' },
+      { key: 'CORS_ALLOWED_ORIGINS', label: '允许前端 Origin', input: 'text', placeholder: 'http://127.0.0.1:5173 http://localhost:5173…' },
     ],
   },
   {
@@ -275,6 +276,8 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabKey>(() => getTabFromLocation())
   const [frontendApiBase, setFrontendApiBase] = useState(() => getApiBaseUrl())
   const [frontendApiToken, setFrontendApiToken] = useState(() => getApiAuthToken())
+  const [quickTokenDraft, setQuickTokenDraft] = useState(frontendApiToken)
+  const [quickTokenVisible, setQuickTokenVisible] = useState(false)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -370,6 +373,22 @@ function App() {
     onSuccess: () => queryClient.invalidateQueries(),
   })
 
+  const apiTokenRequired = [
+    environment.error,
+    spool.error,
+    video.error,
+    inference.error,
+    capture.error,
+    analysis.error,
+    reloadMutation.error,
+    updateConfigMutation.error,
+    configProbeMutation.error,
+    remoteMutation.error,
+    probeMutation.error,
+    flushMutation.error,
+    startMutation.error,
+    stopMutation.error,
+  ].some(isApiTokenRequiredError)
   const apiStatus = health.data?.status ?? (health.isError ? 'offline' : 'checking')
   const environmentChecks = useMemo(
     () => new Map(environment.data?.checks.map((item) => [item.name, item]) ?? []),
@@ -419,6 +438,16 @@ function App() {
     return token
   }
 
+  function saveQuickApiToken() {
+    const token = handleFrontendApiTokenChange(quickTokenDraft)
+    setQuickTokenDraft(token)
+  }
+
+  function clearQuickApiToken() {
+    setQuickTokenDraft('')
+    handleFrontendApiTokenChange('')
+  }
+
   return (
     <>
       <a className="skip-link" href="#main-content">跳到主内容</a>
@@ -456,6 +485,50 @@ function App() {
           </button>
         </div>
       </header>
+
+      {apiTokenRequired && (
+        <section className="auth-prompt panel" aria-live="polite">
+          <div className="auth-prompt-copy">
+            <span className="auth-prompt-icon">
+              <ShieldCheck size={18} aria-hidden="true" />
+            </span>
+            <div>
+              <p className="eyebrow">API Token</p>
+              <h2>当前 API 要求 token</h2>
+            </div>
+          </div>
+          <div className="auth-prompt-controls">
+            <div className="secret-input">
+              <input
+                aria-label="API token"
+                autoComplete="off"
+                inputMode="text"
+                spellCheck={false}
+                type={quickTokenVisible ? 'text' : 'password'}
+                value={quickTokenDraft}
+                placeholder="输入 API_AUTH_TOKEN"
+                onChange={(event) => setQuickTokenDraft(event.target.value)}
+              />
+              <button
+                type="button"
+                className="icon-button"
+                title={quickTokenVisible ? '隐藏' : '显示'}
+                onClick={() => setQuickTokenVisible((current) => !current)}
+              >
+                {quickTokenVisible ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+              </button>
+            </div>
+            <button type="button" onClick={saveQuickApiToken} disabled={!quickTokenDraft.trim()}>
+              <ShieldCheck size={17} aria-hidden="true" />
+              保存 token
+            </button>
+            <button type="button" onClick={clearQuickApiToken} disabled={!frontendApiToken && !quickTokenDraft}>
+              <RotateCw size={17} aria-hidden="true" />
+              清除
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="hero-grid">
         <FrameConsole
@@ -839,13 +912,21 @@ function ConfigPage({
   const [draft, setDraft] = useState<ConfigDraft>({})
   const [dirty, setDirty] = useState(false)
   const [remoteDbPassword, setRemoteDbPassword] = useState('')
-  const [apiBaseDraft, setApiBaseDraft] = useState(frontendApiBase)
-  const [apiTokenDraft, setApiTokenDraft] = useState(frontendApiToken)
+  const [apiBaseDraftState, setApiBaseDraftState] = useState(() => ({
+    source: frontendApiBase,
+    value: frontendApiBase,
+  }))
+  const [apiTokenDraftState, setApiTokenDraftState] = useState(() => ({
+    source: frontendApiToken,
+    value: frontendApiToken,
+  }))
   const [apiTokenVisible, setApiTokenVisible] = useState(false)
   const [revealedFields, setRevealedFields] = useState<Set<string>>(() => new Set())
   const [apiBasePending, setApiBasePending] = useState(false)
   const [apiBaseMessage, setApiBaseMessage] = useState('')
   const visibleDraft = dirty ? draft : currentDraft
+  const apiBaseDraft = apiBaseDraftState.source === frontendApiBase ? apiBaseDraftState.value : frontendApiBase
+  const apiTokenDraft = apiTokenDraftState.source === frontendApiToken ? apiTokenDraftState.value : frontendApiToken
   const configuredRemoteApiBase = visibleDraft.REMOTE_API_BASE_URL ?? ''
 
   useEffect(() => {
@@ -889,7 +970,7 @@ function ConfigPage({
   function saveFrontendApiBase(value = apiBaseDraft) {
     try {
       const normalized = onFrontendApiBaseChange(value)
-      setApiBaseDraft(normalized)
+      setApiBaseDraftState({ source: normalized, value: normalized })
       setApiBaseMessage(normalized ? `前端请求已切到 ${normalized}` : '前端已恢复同源 /api')
     } catch (error) {
       setApiBaseMessage(error instanceof Error ? error.message : 'API 地址无效')
@@ -898,6 +979,7 @@ function ConfigPage({
 
   function saveFrontendApiToken() {
     const token = onFrontendApiTokenChange(apiTokenDraft)
+    setApiTokenDraftState({ source: token, value: token })
     setApiBaseMessage(token ? 'API token 已保存到当前浏览器' : 'API token 已清除')
   }
 
@@ -1048,7 +1130,7 @@ function ConfigPage({
               type="url"
               value={apiBaseDraft}
               placeholder="留空使用本地 /api，或填写 http://服务器:8000…"
-              onChange={(event) => setApiBaseDraft(event.target.value)}
+              onChange={(event) => setApiBaseDraftState({ source: frontendApiBase, value: event.target.value })}
             />
           </label>
           <label className="config-field">
@@ -1065,7 +1147,7 @@ function ConfigPage({
                 type={apiTokenVisible ? 'text' : 'password'}
                 value={apiTokenDraft}
                 placeholder="保存到当前浏览器，请求时作为 Bearer token…"
-                onChange={(event) => setApiTokenDraft(event.target.value)}
+                onChange={(event) => setApiTokenDraftState({ source: frontendApiToken, value: event.target.value })}
               />
               <button
                 type="button"
@@ -1093,7 +1175,7 @@ function ConfigPage({
             <button
               type="button"
               onClick={() => {
-                setApiTokenDraft('')
+                setApiTokenDraftState({ source: '', value: '' })
                 onFrontendApiTokenChange('')
                 setApiBaseMessage('API token 已清除')
               }}
@@ -1503,6 +1585,10 @@ function buildConfigDraft(
 
   return {
     API_AUTH_TOKEN: stringValue(security.api_auth_token),
+    CORS_ALLOWED_ORIGINS: stringValue(
+      security.cors_allowed_origins,
+      'http://127.0.0.1:5173 http://localhost:5173',
+    ),
     CAPTURE_SOURCE_KIND: stringValue(capture.source_kind, 'http_mjpeg'),
     CAPTURE_SOURCE_URL: stringValue(capture.source_url),
     CAPTURE_USERNAME: stringValue(capture.username),
@@ -1531,7 +1617,7 @@ function buildConfigDraft(
     DATABASE_FLUSH_INTERVAL_MS: stringValue(database.flush_interval_ms, '1000'),
     SPOOL_SQLITE_PATH: stringValue(spool.sqlite_path, 'runtime/spool.db'),
     REMOTE_API_BASE_URL: stringValue(remote.api_base_url),
-    REMOTE_API_HOST: stringValue(remote.api_host, '127.0.0.1'),
+    REMOTE_API_HOST: stringValue(remote.api_host, '0.0.0.0'),
     REMOTE_API_PORT: stringValue(remote.api_port, '8000'),
     REMOTE_SSH_HOST: stringValue(remote.ssh_host),
     REMOTE_SSH_PORT: stringValue(remote.ssh_port, '22'),
@@ -1605,6 +1691,10 @@ function getTabFromLocation(): TabKey {
 
 function isTabKey(value: string | null): value is TabKey {
   return value !== null && tabKeys.has(value as TabKey)
+}
+
+function isApiTokenRequiredError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('API token required')
 }
 
 function writeTabToUrl(tab: TabKey, mode: 'push' | 'replace') {

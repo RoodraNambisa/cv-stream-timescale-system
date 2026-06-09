@@ -28,6 +28,7 @@ ROOT = Path.cwd()
 DOTENV_PATH = ROOT / ".env"
 ENV_KEYS = {
     "API_AUTH_TOKEN",
+    "CORS_ALLOWED_ORIGINS",
     "CAPTURE_SOURCE_KIND",
     "CAPTURE_SOURCE_URL",
     "CAPTURE_USERNAME",
@@ -213,6 +214,7 @@ async def main() -> None:
             [
                 "CAPTURE_SOURCE_KIND=file",
                 "API_AUTH_TOKEN=",
+                'CORS_ALLOWED_ORIGINS="http://127.0.0.1:5173 http://localhost:5173"',
                 f"CAPTURE_SOURCE_URL={video_path}",
                 "CAPTURE_FPS_LIMIT=20",
                 "CAPTURE_DEVICE_ID=1",
@@ -281,6 +283,7 @@ async def main() -> None:
 
             config = assert_status(await client.get("/api/config"), 200)
             assert config["security"]["api_auth_token"] == "", config
+            assert "127.0.0.1:5173" in config["security"]["cors_allowed_origins"], config
             assert config["capture"]["source_kind"] == "file", config
             assert config["database"]["configured"] is False, config
             assert config["stream"]["receiver_kind"] == "mediamtx", config
@@ -293,8 +296,20 @@ async def main() -> None:
                 200,
             )
             assert "API_AUTH_TOKEN" in auth_update["updated"], auth_update
-            blocked = await client.get("/api/config")
+            cors_preflight = await client.options(
+                "/api/config",
+                headers={
+                    "Origin": "http://127.0.0.1:5173",
+                    "Access-Control-Request-Method": "GET",
+                    "Access-Control-Request-Headers": "Authorization, X-API-Key",
+                },
+            )
+            assert cors_preflight.status_code == 200, (cors_preflight.status_code, cors_preflight.text)
+            assert cors_preflight.headers["access-control-allow-origin"] == "http://127.0.0.1:5173", cors_preflight.headers
+            assert "Authorization" in cors_preflight.headers["access-control-allow-headers"], cors_preflight.headers
+            blocked = await client.get("/api/config", headers={"Origin": "http://127.0.0.1:5173"})
             assert blocked.status_code == 401, (blocked.status_code, blocked.text)
+            assert blocked.headers["access-control-allow-origin"] == "http://127.0.0.1:5173", blocked.headers
             health_without_token = assert_status(await client.get("/api/health"), 200)
             assert health_without_token["status"] == "ok", health_without_token
             client.headers["Authorization"] = "Bearer smoke-token"

@@ -19,7 +19,7 @@ fi
 . "$ROOT_DIR/scripts/remote_common.sh"
 
 ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" \
-  "true; cd /tmp && runuser -u postgres -- createdb cv_stream 2>/dev/null || true"
+  "$REMOTE_POSTGRES_START_SCRIPT cd /tmp && runuser -u postgres -- createdb cv_stream 2>/dev/null || true"
 
 ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" \
   "cd /tmp && runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d cv_stream" \
