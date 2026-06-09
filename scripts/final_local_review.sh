@@ -88,6 +88,8 @@ check_tracked_outputs() {
     "2"".19"".3"
     "/gemini""/code"
     "已验证""服务器"
+    "当前""服务器"
+    "base conda"
     "本机""监听"
     "外部""映射"
   )

@@ -186,18 +186,18 @@ GET  /api/inference/status
 POST /api/inference/image
 ```
 
-`INFERENCE_ENDPOINT` 留空时使用本地推理；填写远端 API base URL 时，图像推理请求会转发到远端。后端会自动拼接 `/api/inference/status` 和 `/api/inference/image`。当前服务器 base conda 已验证：
+`INFERENCE_ENDPOINT` 留空时使用本地推理；填写远端 API base URL 时，图像推理请求会转发到远端。后端会自动拼接 `/api/inference/status` 和 `/api/inference/image`。远端环境通过脚本检查：
 
 ```text
-torch 2.1.2+cu121
-CUDA 12.1
-GPU NVIDIA H20-3e
-ultralytics 8.2.16
+torch ok
+cuda_available true
+device_count N
+ultralytics ok
 ```
 
 远端 API 需要在服务器上单独启动。它也是同一个 FastAPI 项目，只是运行位置在服务器，使用服务器 conda 里的 CUDA、PyTorch 和 Ultralytics。本地采集远端推理时，本地后端把帧发到 `INFERENCE_ENDPOINT` 指向的 API。这个地址按 HTTP 直连配置，SSH 不参与推理请求。
 
-按更新后的要求，服务器端直接使用现有 conda 环境，不克隆、不额外占用空间。检查远端 CUDA 和 YOLO 环境：
+服务器端使用运行时配置指定的 conda/Python 环境，不克隆、不额外占用空间。检查远端 CUDA 和 YOLO 环境：
 
 ```bash
 scripts/check_remote_conda.sh
@@ -309,6 +309,16 @@ REMOTE_PYTHON=/服务器上的 Python
 ```bash
 scripts/sync_remote_project.sh
 ```
+
+服务器完整部署时，在服务器项目目录内安装前端依赖并构建：
+
+```bash
+cd REMOTE_PROJECT_DIR
+npm --prefix apps/web install
+npm --prefix apps/web run build
+```
+
+前端依赖只会进入服务器项目目录下的 `apps/web/node_modules`。构建完成后，FastAPI 会托管服务器本机生成的 `apps/web/dist`。
 
 安装远端 API 依赖到服务器现有 conda：
 

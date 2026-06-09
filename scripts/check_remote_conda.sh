@@ -11,7 +11,7 @@ remote_ssh "
 import torch
 import ultralytics
 
-print('remote base conda ready')
+print('remote python environment ready')
 print('torch', torch.__version__)
 print('cuda_available', torch.cuda.is_available())
 print('cuda_version', torch.version.cuda)
