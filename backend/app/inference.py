@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import importlib.util
 from typing import Any
@@ -27,7 +28,7 @@ async def infer_image_bytes(
     if settings.inference_endpoint:
         payload = await _remote_image_inference(settings, image_bytes, filename)
     else:
-        payload = _local_image_inference(settings, image_bytes)
+        payload = await asyncio.to_thread(_local_image_inference, settings, image_bytes)
 
     return _filter_inference_payload(settings, payload)
 

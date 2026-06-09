@@ -265,7 +265,7 @@ export async function fetchCaptureStatus(): Promise<CaptureStatus> {
   return readJson('/api/capture/status')
 }
 
-export async function fetchCaptureFrame(): Promise<Blob> {
+export async function fetchCaptureFrame(): Promise<{ blob: Blob; version: number }> {
   const resolvedUrl = resolveApiUrl(`/api/capture/frame.jpg?t=${Date.now()}`)
   const response = await fetch(
     resolvedUrl,
@@ -278,7 +278,10 @@ export async function fetchCaptureFrame(): Promise<Blob> {
     throw new Error(`${resolvedUrl} failed: ${response.status}`)
   }
 
-  return response.blob()
+  return {
+    blob: await response.blob(),
+    version: Number(response.headers.get('x-frame-version') ?? 0),
+  }
 }
 
 export async function fetchAnalysisSummary(): Promise<AnalysisSummary> {

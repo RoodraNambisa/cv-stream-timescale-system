@@ -49,6 +49,7 @@ class CaptureManager:
         self._state = CaptureState()
         self._task: asyncio.Task | None = None
         self._stop_event: asyncio.Event | None = None
+        self._inference_task: asyncio.Task | None = None
 
     async def start(self, request: CaptureStartRequest | None = None) -> dict[str, Any]:
         request = request or CaptureStartRequest()
@@ -123,6 +124,7 @@ class CaptureManager:
             self._state.status = "stopping"
             self._state.message = "正在停止采集任务"
             task = self._task
+            inference_task = self._inference_task
             if self._stop_event is not None:
                 self._stop_event.set()
 
@@ -135,6 +137,7 @@ class CaptureManager:
                 "capture": await self.status(),
             }
 
+        await _cancel_task(inference_task)
         return {
             "status": "ok",
             "message": "采集任务已停止",
@@ -149,9 +152,13 @@ class CaptureManager:
         async with self._lock:
             return self._state.latest_frame_jpeg, self._state.latest_frame_version
 
+    def _inference_available(self) -> bool:
+        return self._inference_task is None or self._inference_task.done()
+
     async def shutdown(self) -> None:
         async with self._lock:
             task = self._task
+            inference_task = self._inference_task
             if self._stop_event is not None:
                 self._stop_event.set()
 
@@ -163,6 +170,8 @@ class CaptureManager:
             await task
         except asyncio.CancelledError:
             pass
+
+        await _cancel_task(inference_task)
 
     async def _run(
         self,
@@ -187,6 +196,7 @@ class CaptureManager:
             return
 
         consecutive_read_failures = 0
+        last_preview_at = 0.0
 
         try:
             while not stop_event.is_set():
@@ -221,18 +231,24 @@ class CaptureManager:
 
                 consecutive_read_failures = 0
                 frame_index = await self._bump_frame_read()
-                image_bytes = await asyncio.to_thread(_encode_jpeg, frame)
+                image_bytes = None
+                now = asyncio.get_running_loop().time()
+                if now - last_preview_at >= _preview_interval_seconds(runtime_settings):
+                    image_bytes = await asyncio.to_thread(_encode_jpeg, frame)
+                    last_preview_at = now
                 if image_bytes is not None:
                     height, width = frame.shape[:2]
                     await self._store_latest_frame(image_bytes, frame_index, width, height)
 
-                if frame_index % frame_interval == 0:
-                    await self._infer_and_enqueue(
-                        runtime_settings,
-                        request,
-                        frame,
-                        frame_index,
-                        image_bytes,
+                if frame_index % frame_interval == 0 and self._inference_available():
+                    self._inference_task = asyncio.create_task(
+                        self._infer_and_enqueue(
+                            runtime_settings,
+                            request,
+                            frame,
+                            frame_index,
+                            image_bytes,
+                        )
                     )
 
                 if fps_sleep_seconds > 0:
@@ -264,31 +280,40 @@ class CaptureManager:
         frame_index: int,
         image_bytes: bytes | None = None,
     ) -> None:
-        image_bytes = image_bytes or await asyncio.to_thread(_encode_jpeg, frame)
-        if image_bytes is None:
-            await self._update_state(last_error="frame_encode_failed")
-            return
+        try:
+            image_bytes = image_bytes or await asyncio.to_thread(_encode_jpeg, frame)
+            if image_bytes is None:
+                await self._update_state(last_error="frame_encode_failed")
+                return
 
-        result = await infer_image_bytes(settings, image_bytes, f"frame-{frame_index}.jpg")
-        await self._bump_counter("frames_inferred", 1)
+            result = await infer_image_bytes(settings, image_bytes, f"frame-{frame_index}.jpg")
+            await self._bump_counter("frames_inferred", 1)
 
-        if result.get("status") != "ok":
+            if result.get("status") != "ok":
+                await self._update_state(
+                    message=str(result.get("message") or "推理失败"),
+                    last_error=str(result.get("message") or result),
+                )
+                return
+
+            records = _detections_to_records(settings, request, result, frame_index)
+            if records:
+                await self._spool.enqueue(records, settings)
+                await self._bump_counter("detections_queued", len(records))
+                await self._remember_detections(records)
+
             await self._update_state(
-                message=str(result.get("message") or "推理失败"),
-                last_error=str(result.get("message") or result),
+                message=f"推理完成，检测到 {len(records)} 个目标",
+                last_error=None,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._update_state(
+                message="推理任务异常",
+                last_error=str(exc),
             )
             return
-
-        records = _detections_to_records(settings, request, result, frame_index)
-        if records:
-            await self._spool.enqueue(records, settings)
-            await self._bump_counter("detections_queued", len(records))
-            await self._remember_detections(records)
-
-        await self._update_state(
-            message=f"推理完成，检测到 {len(records)} 个目标",
-            last_error=None,
-        )
 
     async def _bump_frame_read(self) -> int:
         async with self._lock:
@@ -390,10 +415,25 @@ def _locked_settings(
 def _encode_jpeg(frame: Any) -> bytes | None:
     import cv2
 
-    ok, buffer = cv2.imencode(".jpg", frame)
+    ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 78])
     if not ok:
         return None
     return buffer.tobytes()
+
+
+def _preview_interval_seconds(settings: Settings) -> float:
+    preview_fps = min(max(settings.capture_fps_limit, 1), 10)
+    return 1 / preview_fps
+
+
+async def _cancel_task(task: asyncio.Task | None) -> None:
+    if task is None or task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 def _detections_to_records(

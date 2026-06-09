@@ -789,7 +789,6 @@ function FrameConsole({
 }) {
   const captureConfig = videoConfig?.capture ?? pickObject(config, 'capture')
   const source = String(captureConfig.source_url || captureStatus?.settings_locked?.source || '未配置视频源')
-  const frameNumber = String(captureStatus?.frames_read ?? 0).padStart(6, '0')
   const model = String(pickObject(config, 'inference').model || 'yolov8n.pt')
   const tone = toneFromRuntime(captureStatus?.status)
   const recentDetections = captureStatus?.recent_detections ?? []
@@ -798,8 +797,12 @@ function FrameConsole({
   const frameHeight = captureStatus?.latest_frame_height ?? 0
   const [framePreviewUrl, setFramePreviewUrl] = useState('')
   const [framePreviewError, setFramePreviewError] = useState('')
+  const [previewFrameVersion, setPreviewFrameVersion] = useState(0)
   const framePreviewUrlRef = useRef<string | null>(null)
-  const visibleFramePreviewUrl = latestFrameVersion ? framePreviewUrl : ''
+  const framePreviewVersionRef = useRef(0)
+  const previewActive = captureStatus?.status === 'running' || latestFrameVersion > 0
+  const visibleFramePreviewUrl = previewActive ? framePreviewUrl : ''
+  const displayFrameNumber = previewFrameVersion || captureStatus?.frames_read || 0
   const detectionBoxes = recentDetections
     .map((detection) => ({
       detection,
@@ -809,7 +812,7 @@ function FrameConsole({
     .slice(0, 6)
 
   useEffect(() => {
-    if (!latestFrameVersion) {
+    if (!previewActive) {
       if (framePreviewUrlRef.current) {
         URL.revokeObjectURL(framePreviewUrlRef.current)
         framePreviewUrlRef.current = null
@@ -818,30 +821,50 @@ function FrameConsole({
     }
 
     let cancelled = false
-    void fetchCaptureFrame()
-      .then((blob) => {
+    let timer: number | undefined
+
+    async function refreshFrame() {
+      try {
+        const { blob, version } = await fetchCaptureFrame()
         if (cancelled) {
           return
         }
 
-        const nextUrl = URL.createObjectURL(blob)
-        if (framePreviewUrlRef.current) {
-          URL.revokeObjectURL(framePreviewUrlRef.current)
+        if (version && version === framePreviewVersionRef.current) {
+          timer = window.setTimeout(refreshFrame, 120)
+          return
         }
+
+        const nextUrl = URL.createObjectURL(blob)
+        const previousUrl = framePreviewUrlRef.current
         framePreviewUrlRef.current = nextUrl
+        framePreviewVersionRef.current = version || framePreviewVersionRef.current + 1
+        setPreviewFrameVersion(framePreviewVersionRef.current)
         setFramePreviewUrl(nextUrl)
         setFramePreviewError('')
-      })
-      .catch((error: unknown) => {
+        if (previousUrl) {
+          URL.revokeObjectURL(previousUrl)
+        }
+      } catch (error: unknown) {
         if (!cancelled) {
           setFramePreviewError(error instanceof Error ? error.message : String(error))
         }
-      })
+      }
+
+      if (!cancelled) {
+        timer = window.setTimeout(refreshFrame, 120)
+      }
+    }
+
+    void refreshFrame()
 
     return () => {
       cancelled = true
+      if (timer !== undefined) {
+        window.clearTimeout(timer)
+      }
     }
-  }, [latestFrameVersion])
+  }, [previewActive])
 
   useEffect(() => {
     return () => {
@@ -876,7 +899,7 @@ function FrameConsole({
         <div className="scan-grid" aria-hidden="true" />
         <div className="frame-meta top-left">
           <span>FRAME</span>
-          <strong>{frameNumber}</strong>
+          <strong>{String(displayFrameNumber).padStart(6, '0')}</strong>
         </div>
         <div className="frame-meta top-right">
           <span>MODEL</span>
