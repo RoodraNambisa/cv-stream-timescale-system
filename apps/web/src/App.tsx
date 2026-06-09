@@ -123,6 +123,9 @@ type ConfigGroup = {
 type ConfigDraft = Record<string, string>
 type ConfigInputMode = 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url'
 type ConfigSectionKey = 'access' | 'video' | 'inference' | 'storage' | 'observability' | 'remote'
+type FrameDisplayMode = 'contain' | 'cover'
+
+const FRAME_DISPLAY_MODE_STORAGE_KEY = 'cv-stream-timescale-frame-display-mode'
 
 const lockedConfigKeys = new Set([
   'CAPTURE_SOURCE_KIND',
@@ -814,6 +817,7 @@ function FrameConsole({
   const [previewFrameVersion, setPreviewFrameVersion] = useState(0)
   const [frameHudVisible, setFrameHudVisible] = useState(false)
   const [viewerOpen, setViewerOpen] = useState(false)
+  const [frameDisplayMode, setFrameDisplayMode] = useState<FrameDisplayMode>(() => getFrameDisplayMode())
   const framePreviewUrlRef = useRef<string | null>(null)
   const framePreviewVersionRef = useRef(0)
   const previewActive = captureStatus?.status === 'running' || latestFrameVersion > 0
@@ -838,13 +842,7 @@ function FrameConsole({
       : `检测滞后 ${overlayLagFrames} 帧，已隐藏旧框`
     : '等待检测框…'
   const queuedText = `${numberFormatter.format(captureStatus?.detections_queued ?? 0)} queued`
-  const detectionBoxes = overlayDetections
-    .map((detection) => ({
-      detection,
-      style: detectionBoxStyle(detection, frameWidth, frameHeight),
-    }))
-    .filter((item): item is { detection: DetectionSnapshot; style: Record<string, string> } => Boolean(item.style))
-    .slice(0, 6)
+  const frameModeAction = frameDisplayMode === 'contain' ? '切换为铺满裁切' : '切换为适应比例'
 
   useEffect(() => {
     if (!previewActive) {
@@ -931,6 +929,14 @@ function FrameConsole({
     }
   }, [viewerOpen])
 
+  function toggleFrameDisplayMode() {
+    setFrameDisplayMode((current) => {
+      const next = current === 'contain' ? 'cover' : 'contain'
+      setFrameDisplayModePreference(next)
+      return next
+    })
+  }
+
   return (
     <>
       <section className="frame-console panel">
@@ -940,6 +946,15 @@ function FrameConsole({
             <h2>{source}</h2>
           </div>
           <div className="frame-toolbar-actions">
+            <button
+              type="button"
+              className="icon-button"
+              title={frameModeAction}
+              aria-label={frameModeAction}
+              onClick={toggleFrameDisplayMode}
+            >
+              <ScanLine size={17} aria-hidden="true" />
+            </button>
             <button
               type="button"
               className="icon-button"
@@ -968,11 +983,14 @@ function FrameConsole({
 
         <FrameStage
           ariaLabel="视频帧预览"
-          detectionBoxes={detectionBoxes}
+          detections={overlayDetections}
+          displayMode={frameDisplayMode}
           displayFrameNumber={displayFrameNumber}
           emptyText={framePreviewError ? '视频帧预览读取失败' : '等待视频帧…'}
           frameHudVisible={frameHudVisible}
+          frameHeight={frameHeight}
           framePreviewUrl={visibleFramePreviewUrl}
+          frameWidth={frameWidth}
           model={model}
           overlayStatus={overlayStatus}
           queuedText={queuedText}
@@ -1006,11 +1024,14 @@ function FrameConsole({
             <FrameStage
               ariaLabel="放大视频帧预览"
               className="frame-lightbox-stage"
-              detectionBoxes={detectionBoxes}
+              detections={overlayDetections}
+              displayMode={frameDisplayMode}
               displayFrameNumber={displayFrameNumber}
               emptyText="等待视频帧…"
               frameHudVisible={frameHudVisible}
+              frameHeight={frameHeight}
               framePreviewUrl={visibleFramePreviewUrl}
+              frameWidth={frameWidth}
               model={model}
               overlayStatus={overlayStatus}
               queuedText={queuedText}
@@ -1025,32 +1046,79 @@ function FrameConsole({
 function FrameStage({
   ariaLabel,
   className = '',
-  detectionBoxes,
+  detections,
+  displayMode,
   displayFrameNumber,
   emptyText,
   frameHudVisible,
+  frameHeight,
   framePreviewUrl,
+  frameWidth,
   model,
   overlayStatus,
   queuedText,
 }: {
   ariaLabel: string
   className?: string
-  detectionBoxes: Array<{ detection: DetectionSnapshot; style: Record<string, string> }>
+  detections: DetectionSnapshot[]
+  displayMode: FrameDisplayMode
   displayFrameNumber: number
   emptyText: string
   frameHudVisible: boolean
+  frameHeight: number
   framePreviewUrl: string
+  frameWidth: number
   model: string
   overlayStatus: string
   queuedText: string
 }) {
-  const stageClassName = ['video-stage', className, framePreviewUrl ? 'has-frame' : '']
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
+  const detectionBoxes = detections
+    .map((detection) => ({
+      detection,
+      style: detectionBoxStyle(detection, frameWidth, frameHeight, stageSize, displayMode),
+    }))
+    .filter((item): item is { detection: DetectionSnapshot; style: Record<string, string> } => Boolean(item.style))
+    .slice(0, 6)
+  const stageClassName = ['video-stage', `frame-mode-${displayMode}`, className, framePreviewUrl ? 'has-frame' : '']
     .filter(Boolean)
     .join(' ')
 
+  useEffect(() => {
+    const node = stageRef.current
+    if (!node) {
+      return undefined
+    }
+    const stageNode = node
+
+    function updateStageSize() {
+      const rect = stageNode.getBoundingClientRect()
+      setStageSize((current) => {
+        if (Math.abs(current.width - rect.width) < 1 && Math.abs(current.height - rect.height) < 1) {
+          return current
+        }
+        return { width: rect.width, height: rect.height }
+      })
+    }
+
+    updateStageSize()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateStageSize)
+      return () => window.removeEventListener('resize', updateStageSize)
+    }
+
+    const observer = new ResizeObserver(updateStageSize)
+    observer.observe(stageNode)
+    window.addEventListener('resize', updateStageSize)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateStageSize)
+    }
+  }, [])
+
   return (
-    <div className={stageClassName} aria-label={ariaLabel}>
+    <div className={stageClassName} aria-label={ariaLabel} ref={stageRef}>
       {framePreviewUrl && (
         <img
           alt=""
@@ -2177,6 +2245,20 @@ function isApiTokenRequiredError(error: unknown): boolean {
   return error instanceof Error && error.message.includes('API token required')
 }
 
+function getFrameDisplayMode(): FrameDisplayMode {
+  if (typeof window === 'undefined') {
+    return 'contain'
+  }
+
+  return window.localStorage.getItem(FRAME_DISPLAY_MODE_STORAGE_KEY) === 'cover' ? 'cover' : 'contain'
+}
+
+function setFrameDisplayModePreference(value: FrameDisplayMode) {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(FRAME_DISPLAY_MODE_STORAGE_KEY, value)
+  }
+}
+
 function writeTabToUrl(tab: TabKey, mode: 'push' | 'replace') {
   if (typeof window === 'undefined') {
     return
@@ -2290,6 +2372,8 @@ function detectionBoxStyle(
   detection: DetectionSnapshot,
   frameWidth: number,
   frameHeight: number,
+  stageSize: { width: number; height: number },
+  displayMode: FrameDisplayMode,
 ): Record<string, string> | undefined {
   const x1 = numberOrNull(detection.bbox_x1)
   const y1 = numberOrNull(detection.bbox_y1)
@@ -2305,6 +2389,9 @@ function detectionBoxStyle(
   if (widthBase <= 0 || heightBase <= 0) {
     return undefined
   }
+  if (stageSize.width <= 0 || stageSize.height <= 0) {
+    return undefined
+  }
 
   const left = clampNumber(Math.min(x1, x2) / widthBase, 0, 1)
   const top = clampNumber(Math.min(y1, y2) / heightBase, 0, 1)
@@ -2316,11 +2403,19 @@ function detectionBoxStyle(
     return undefined
   }
 
+  const scale = displayMode === 'cover'
+    ? Math.max(stageSize.width / widthBase, stageSize.height / heightBase)
+    : Math.min(stageSize.width / widthBase, stageSize.height / heightBase)
+  const imageWidth = widthBase * scale
+  const imageHeight = heightBase * scale
+  const offsetX = (stageSize.width - imageWidth) / 2
+  const offsetY = (stageSize.height - imageHeight) / 2
+
   return {
-    left: `${left * 100}%`,
-    top: `${top * 100}%`,
-    width: `${width * 100}%`,
-    height: `${height * 100}%`,
+    left: `${offsetX + left * imageWidth}px`,
+    top: `${offsetY + top * imageHeight}px`,
+    width: `${width * imageWidth}px`,
+    height: `${height * imageHeight}px`,
   }
 }
 
