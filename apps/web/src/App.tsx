@@ -179,7 +179,7 @@ const configGroups: ConfigGroup[] = [
     icon: Cpu,
     accent: 'accent-gpu',
     fields: [
-      { key: 'INFERENCE_ENDPOINT', label: '远端推理直连 URL', input: 'url', placeholder: 'http://服务器:8000…' },
+      { key: 'INFERENCE_ENDPOINT', label: '远端推理直连 URL', input: 'url', placeholder: 'http://API_HOST:8000…' },
       { key: 'INFERENCE_API_TOKEN', label: '远端推理 API token', input: 'password', sensitive: true, placeholder: '远端 API 启用鉴权时填写…' },
       { key: 'INFERENCE_DEVICE', label: '推理设备', input: 'select', options: ['auto', 'cpu', 'cuda'] },
       { key: 'INFERENCE_MODEL', label: '模型文件', input: 'text' },
@@ -216,9 +216,9 @@ const configGroups: ConfigGroup[] = [
     icon: Server,
     accent: 'accent-remote',
     fields: [
-      { key: 'REMOTE_API_BASE_URL', label: '直连 API Base URL', input: 'url', placeholder: 'http://服务器:8000…' },
-      { key: 'REMOTE_API_HOST', label: '服务器 API 监听主机', input: 'text' },
-      { key: 'REMOTE_API_PORT', label: '服务器 API 监听端口', input: 'number' },
+      { key: 'REMOTE_API_BASE_URL', label: '直连 API Base URL', input: 'url', placeholder: 'http://API_HOST:8000…' },
+      { key: 'REMOTE_API_HOST', label: '远端 API 监听主机', input: 'text' },
+      { key: 'REMOTE_API_PORT', label: '远端 API 监听端口', input: 'number' },
       { key: 'REMOTE_SSH_HOST', label: 'SSH 管理主机', input: 'text', placeholder: '可选…' },
       { key: 'REMOTE_SSH_PORT', label: 'SSH 管理端口', input: 'number' },
       { key: 'REMOTE_SSH_USER', label: 'SSH 管理用户', input: 'text', placeholder: '可选…' },
@@ -1129,7 +1129,7 @@ function ConfigPage({
               spellCheck={false}
               type="url"
               value={apiBaseDraft}
-              placeholder="留空使用本地 /api，或填写 http://服务器:8000…"
+              placeholder="留空使用本地 /api，或填写 http://API_HOST:8000…"
               onChange={(event) => setApiBaseDraftState({ source: frontendApiBase, value: event.target.value })}
             />
           </label>

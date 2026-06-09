@@ -7,7 +7,7 @@
 
 PostgreSQL/TimescaleDB 由实际部署环境提供。Docker 不是主方案。
 
-在服务器上执行：
+需要 SSH 管理数据库时执行：
 
 ```bash
 scripts/configure_remote_database.sh
@@ -20,7 +20,7 @@ scripts/apply_remote_schema.sh
 DATABASE_URL=postgresql://cv_user:CHANGE_ME@DB_HOST:5432/cv_stream scripts/apply_remote_schema.sh
 ```
 
-运行时数据库连接只看 `DATABASE_URL`。本地数据库、远端数据库或服务器内部数据库都使用 PostgreSQL 连接串：
+运行时数据库连接只看 `DATABASE_URL`。本地数据库、远端数据库或同机数据库都使用 PostgreSQL 连接串：
 
 ```text
 postgresql://cv_user:CHANGE_ME@DB_HOST:5432/cv_stream

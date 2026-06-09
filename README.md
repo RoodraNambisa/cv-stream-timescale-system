@@ -17,7 +17,7 @@
 
 - 前端依赖安装在 `apps/web/node_modules`
 - Python 依赖安装在仓库根目录 `.venv`
-- 服务器推理使用运行时配置指定的 conda/Python 环境
+- 远端推理使用运行时配置指定的 conda/Python 环境
 
 ## 本地启动
 
@@ -195,9 +195,9 @@ device_count N
 ultralytics ok
 ```
 
-远端 API 需要在服务器上单独启动。它也是同一个 FastAPI 项目，只是运行位置在服务器，使用服务器 conda 里的 CUDA、PyTorch 和 Ultralytics。本地采集远端推理时，本地后端把帧发到 `INFERENCE_ENDPOINT` 指向的 API。这个地址按 HTTP 直连配置，SSH 不参与推理请求。
+远端 API 是同一个 FastAPI 项目，在具备推理能力的运行环境中启动。采集端把帧发到 `INFERENCE_ENDPOINT` 指向的 API。这个地址按 HTTP 直连配置，SSH 不参与推理请求。
 
-服务器端使用运行时配置指定的 conda/Python 环境，不克隆、不额外占用空间。检查远端 CUDA 和 YOLO 环境：
+远端运行环境使用配置指定的 conda/Python，不克隆、不额外占用空间。检查 CUDA 和 YOLO 环境：
 
 ```bash
 scripts/check_remote_conda.sh
@@ -235,7 +235,7 @@ cp .env.example .env
 - `GRAFANA_BASE_URL`：可选 Grafana 地址，环境检测会访问 `/api/health`
 - `GRAFANA_DASHBOARD_URL`：可选 Grafana 面板地址，前端配置页会保留该链接
 
-前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`API_AUTH_TOKEN` 保护当前 FastAPI 入站接口。`REMOTE_API_BASE_URL` 是本地或前端可访问的远端 API 直连入口，环境检测会访问它的 `/api/health`。浏览器直连远端 API 时，远端 `.env` 的 `CORS_ALLOWED_ORIGINS` 要包含当前前端地址，例如 `http://127.0.0.1:5173` 或服务器上的前端地址。`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制服务器上 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测服务器、同步项目、安装依赖、配库、启动或停止远端 API。`REMOTE_PIP_INDEX_URLS`、`REMOTE_PIP_TRUSTED_HOSTS` 和 `REMOTE_PIP_PROXY` 只影响远端依赖安装。
+前端配置页可以修改这些配置。保存后，后端写 `.env` 并热重载；运行中锁定项要先停止采集再改。`API_AUTH_TOKEN` 保护当前 FastAPI 入站接口。`REMOTE_API_BASE_URL` 是前端可访问的远端 API 直连入口，环境检测会访问它的 `/api/health`。浏览器直连远端 API 时，远端 `.env` 的 `CORS_ALLOWED_ORIGINS` 要包含当前前端地址，例如 `http://127.0.0.1:5173` 或部署后的前端地址。`INFERENCE_ENDPOINT` 才是采集运行时真正使用的推理地址。`REMOTE_API_HOST` 和 `REMOTE_API_PORT` 控制远端 FastAPI 的监听参数。`REMOTE_SSH_HOST`、`REMOTE_SSH_PORT`、`REMOTE_SSH_USER` 和 `REMOTE_SSH_KEY_PATH` 是可选远端管理参数，只用于检测运行环境、同步项目、安装依赖、配库、启动或停止远端 API。`REMOTE_PIP_INDEX_URLS`、`REMOTE_PIP_TRUSTED_HOSTS` 和 `REMOTE_PIP_PROXY` 只影响远端依赖安装。
 
 Grafana 是可选观测入口。React 分析页已经能展示类别分布、时间桶和统计元数据；如果你部署了 Grafana，可以让它直接读取同一个 PostgreSQL/TimescaleDB，再把 `GRAFANA_BASE_URL` 和 `GRAFANA_DASHBOARD_URL` 写入配置，环境检测会显示 Grafana 是否可达。
 
@@ -251,11 +251,11 @@ deploy/env/server-all.env.example
 
 ## 端口
 
-开发态常用两个本机端口：FastAPI 默认 `8000`，Vite 默认 `5173`。部署态先构建前端，再让 FastAPI 托管 `apps/web/dist`，浏览器和 API 共用 FastAPI 入口。
+开发态常用两个端口：FastAPI 默认 `8000`，Vite 默认 `5173`。部署态先构建前端，再让 FastAPI 托管 `apps/web/dist`，浏览器和 API 共用 FastAPI 入口。
 
-可选组件按各自服务暴露端口：PostgreSQL/TimescaleDB 默认 `5432`，MediaMTX 常用 RTSP `8554`、RTMP `1935`、API `9997`，nginx-rtmp 常用 RTMP `1935` 和 stat 页面，Grafana 默认 `3000`，Android IP Webcam 通常由手机提供 HTTP 视频地址。服务器平台的外部转发端口不写入仓库文档；把实际地址写进本地忽略的 `.env` 或 `runtime/remote_connection.env`。
+可选组件按各自服务暴露端口：PostgreSQL/TimescaleDB 默认 `5432`，MediaMTX 常用 RTSP `8554`、RTMP `1935`、API `9997`，nginx-rtmp 常用 RTMP `1935` 和 stat 页面，Grafana 默认 `3000`，Android IP Webcam 通常由手机提供 HTTP 视频地址。部署平台的外部转发端口不写入仓库文档；把实际地址写进本地忽略的 `.env` 或 `runtime/remote_connection.env`。
 
-远端单端口部署时，`REMOTE_API_HOST=0.0.0.0` 用于服务器进程监听。浏览器访问平台提供的 FastAPI 外部地址即可打开前端；采集端远端推理也写同一个 API 地址。如果 API 只监听 `127.0.0.1`，外部浏览器无法直接访问。
+单端口部署时，`REMOTE_API_HOST=0.0.0.0` 用于进程监听。浏览器访问 FastAPI 入口即可打开前端；采集端远端推理也写同一个 API 地址。如果 API 只监听 `127.0.0.1`，外部浏览器无法直接访问。
 
 可选组件模板：
 
@@ -285,32 +285,32 @@ dashboard JSON 包含检测时间桶、类别 Top、分钟置信度和最近检�
 
 采集运行中仍可热重载 `CONFIDENCE_THRESHOLD`、`FRAME_INTERVAL`、`CAPTURE_FPS_LIMIT`、`DETECTION_CLASS_FILTER`、`ANALYSIS_TIME_RANGE_MINUTES`、`DATABASE_BATCH_SIZE` 和 `DATABASE_FLUSH_INTERVAL_MS`。系统会继续使用启动时的视频源、推理端点、模型、数据库 URL 和 spool 路径。
 
-运行时写库只看 `DATABASE_URL`，后端通过 PostgreSQL 协议直接连接本地或远端数据库。SSH 配库只负责创建用户、启动服务、应用 schema、写服务器 `.env`，不参与正常检测数据写入。只有在平台允许端口转发且数据库无法直连时，才把 SSH 隧道当作临时诊断方案。
+运行时写库只看 `DATABASE_URL`，后端通过 PostgreSQL 协议直接连接数据库。SSH 配库只负责创建用户、启动服务、应用 schema、写远端 `.env`，不参与正常检测数据写入。只有在平台允许端口转发且数据库无法直连时，才把 SSH 隧道当作临时诊断方案。
 
 ## 远端连接参数
 
 远端脚本从环境变量或本地忽略文件读取 SSH、项目目录、Python 路径和平台映射地址。推荐创建 `runtime/remote_connection.env`：
 
 ```text
-REMOTE_HOST=服务器地址
+REMOTE_HOST=远端主机地址
 REMOTE_LOGIN=SSH 登录名
 REMOTE_PORT=SSH 端口
 REMOTE_KEY=SSH 私钥路径
-REMOTE_PROJECT_DIR=/服务器上的项目目录
-REMOTE_PYTHON=/服务器上的 Python
+REMOTE_PROJECT_DIR=/远端运行目录
+REMOTE_PYTHON=/远端 Python
 ```
 
-`runtime/remote_connection.env` 不提交。服务器平台分配的外部端口、账号和私钥路径只放在本地忽略文件或 shell 环境变量里。
+`runtime/remote_connection.env` 不提交。部署平台分配的外部端口、账号和私钥路径只放在本地忽略文件或 shell 环境变量里。
 
 ## 远端联调
 
-同步本地代码到服务器持久目录：
+同步代码到远端运行目录：
 
 ```bash
 scripts/sync_remote_project.sh
 ```
 
-服务器完整部署时，在服务器项目目录内安装前端依赖并构建：
+在代码目录内安装前端依赖并构建：
 
 ```bash
 cd REMOTE_PROJECT_DIR
@@ -318,9 +318,9 @@ npm --prefix apps/web install
 npm --prefix apps/web run build
 ```
 
-前端依赖只会进入服务器项目目录下的 `apps/web/node_modules`。构建完成后，FastAPI 会托管服务器本机生成的 `apps/web/dist`。
+前端依赖只会进入当前项目的 `apps/web/node_modules`。构建完成后，FastAPI 会托管当前项目生成的 `apps/web/dist`。
 
-安装远端 API 依赖到服务器现有 conda：
+安装远端 API 依赖到配置的 Python 环境：
 
 ```bash
 scripts/setup_remote_backend.sh
@@ -365,7 +365,7 @@ REMOTE_DB_PASSWORD='你的密码' scripts/configure_remote_database.sh
 runtime/remote_database.env
 ```
 
-这里面会写入本地直连远端数据库的 `DATABASE_URL`，以及服务器内部运行用的 `SERVER_DATABASE_URL`，不要提交。
+这里面会写入直连远端数据库的 `DATABASE_URL`，以及远端进程使用的 `SERVER_DATABASE_URL`，不要提交。
 
 应用 schema 和分析 SQL：
 
@@ -395,7 +395,7 @@ scripts/remote_api.sh stop
 scripts/ssh_db_tunnel.sh
 ```
 
-运行时优先把可直连的 PostgreSQL/TimescaleDB 连接串写进 `DATABASE_URL`。这条脚本只在服务器禁止数据库直连且 SSH 允许端口转发时临时使用。
+运行时优先把可直连的 PostgreSQL/TimescaleDB 连接串写进 `DATABASE_URL`。这条脚本只在数据库无法直连且 SSH 允许端口转发时临时使用。
 
 可选诊断脚本：远端 API 端口转发：
 
@@ -419,29 +419,29 @@ POST /api/remote/api_stop
 POST /api/remote/api_logs
 ```
 
-这些接口只允许调用仓库内白名单脚本。连接服务器靠可选的 `REMOTE_SSH_*` 配置和 SSH 私钥；安装依赖会进入服务器持久目录，使用现有 conda 环境，不全局安装本地依赖。`configure_database` 负责初始化数据库用户和远端配置；`apply_schema` 在 `DATABASE_URL` 有值时直接应用 schema，没写连接串时回退到 SSH 路径。检测结果写库仍然由后端按 `DATABASE_URL` 发起 PostgreSQL 连接。未配置 SSH 时，SSH 管理按钮会返回缺少 SSH 配置，不影响直连数据库和直连推理 API。
+这些接口只允许调用仓库内白名单脚本。远端管理靠可选的 `REMOTE_SSH_*` 配置和 SSH 私钥；安装依赖会进入远端运行目录，使用配置指定的 Python 环境，不全局安装依赖。`configure_database` 负责初始化数据库用户和远端配置；`apply_schema` 在 `DATABASE_URL` 有值时直接应用 schema，没写连接串时回退到 SSH 路径。检测结果写库仍然由后端按 `DATABASE_URL` 发起 PostgreSQL 连接。未配置 SSH 时，SSH 管理按钮会返回缺少 SSH 配置，不影响直连数据库和直连推理 API。
 
-本地采集、远端推理、远端数据库直连时，本地 `.env` 可以这样组合：
+采集端使用远端推理和远端数据库直连时，`.env` 可以这样组合：
 
 ```text
 CAPTURE_SOURCE_KIND=http_mjpeg
 CAPTURE_SOURCE_URL=http://手机IP:8080/video
-INFERENCE_ENDPOINT=http://服务器:8000
+INFERENCE_ENDPOINT=http://API_HOST:8000
 INFERENCE_API_TOKEN=远端API令牌
 DATABASE_URL=postgresql://cv_user:密码@数据库主机:5432/cv_stream
 ```
 
-服务器完整运行时，编辑服务器项目目录下的：
+远端完整运行时，编辑运行目录下的：
 
 ```text
 REMOTE_PROJECT_DIR/.env
 ```
 
-把 `CAPTURE_SOURCE_URL` 改成服务器能访问的视频 URL，`INFERENCE_ENDPOINT` 留空，远端 API 会使用服务器 conda 里的 CUDA/Ultralytics。
+把 `CAPTURE_SOURCE_URL` 改成运行环境能访问的视频 URL，`INFERENCE_ENDPOINT` 留空，FastAPI 会使用当前 Python 环境里的 CUDA/Ultralytics。
 
 ## 运行组合
 
-本地完整运行：
+同机完整运行：
 
 ```text
 本地拉流 -> 本地推理 -> 本地或远端数据库
@@ -453,8 +453,8 @@ REMOTE_PROJECT_DIR/.env
 本地拉流 -> 远端 GPU API -> 本地或远端数据库
 ```
 
-服务器完整运行：
+远端完整运行：
 
 ```text
-服务器拉视频 URL -> 服务器 GPU 推理 -> 服务器 TimescaleDB
+远端拉视频 URL -> 远端 GPU/CPU 推理 -> PostgreSQL/TimescaleDB
 ```
