@@ -391,6 +391,7 @@ const confidenceFormatter = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 })
+const captureStatusRefetchMs = 300
 const numberFormatter = new Intl.NumberFormat('zh-CN')
 const dateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric',
@@ -470,7 +471,7 @@ function App() {
   const capture = useQuery({
     queryKey: ['capture-status', frontendApiBase, frontendApiToken],
     queryFn: fetchCaptureStatus,
-    refetchInterval: 3_000,
+    refetchInterval: captureStatusRefetchMs,
   })
 
   const analysis = useQuery({
