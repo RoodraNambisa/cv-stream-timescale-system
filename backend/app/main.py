@@ -169,7 +169,7 @@ async def update_config(request: ConfigUpdateRequest) -> dict:
 
 @app.get("/api/environment")
 async def environment() -> dict:
-    return await collect_environment(get_settings())
+    return await collect_environment(get_settings(), await capture.status())
 
 
 @app.post("/api/environment/probe")

@@ -143,6 +143,8 @@ h3 {
 }
 
 .frame-console {
+  min-width: 0;
+  overflow: hidden;
   padding: 14px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.98)),
@@ -206,8 +208,11 @@ h3 {
 
 .video-stage {
   position: relative;
-  aspect-ratio: 16 / 7;
-  min-height: clamp(380px, 38vw, 620px);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: clamp(330px, 28vw, 520px);
+  box-sizing: border-box;
   overflow: hidden;
   border-radius: 8px;
   border: 1px solid #142642;
@@ -240,6 +245,11 @@ h3 {
 
 .video-stage.frame-mode-adaptive {
   margin-inline: auto;
+}
+
+.video-stage.frame-mode-adaptive.has-frame {
+  height: auto;
+  min-height: 0;
 }
 
 .frame-mode-button-adaptive {
@@ -1406,8 +1416,7 @@ h3 {
   }
 
   .video-stage {
-    aspect-ratio: 4 / 5;
-    min-height: 360px;
+    height: 320px;
   }
 
   .frame-toolbar {

@@ -229,7 +229,48 @@ async def check_database_schema(connection: asyncpg.Connection, timescale_enable
         return warn("database_schema", "数据库 schema 检测失败", {"error": str(exc)})
 
 
-async def check_video_source(settings: Settings) -> Check:
+async def check_video_source(
+    settings: Settings,
+    capture_status: dict[str, Any] | None = None,
+) -> Check:
+    if capture_status:
+        status = str(capture_status.get("status") or "")
+        last_error = capture_status.get("last_error")
+        if status in {"running", "stopping"}:
+            frames_read = int(capture_status.get("frames_read") or 0)
+            details = {
+                "source_kind": settings.capture_source_kind,
+                "frames_read": frames_read,
+                "frames_inferred": capture_status.get("frames_inferred"),
+                "latest_frame_width": capture_status.get("latest_frame_width"),
+                "latest_frame_height": capture_status.get("latest_frame_height"),
+                "latest_frame_version": capture_status.get("latest_frame_version"),
+                "last_error": last_error,
+            }
+            if frames_read > 0 and not last_error:
+                return ok("video_source", "采集运行中，已复用实时帧状态", details)
+            if last_error:
+                return error(
+                    "video_source",
+                    str(capture_status.get("message") or "视频源读取异常"),
+                    details,
+                )
+            return warn("video_source", "采集已启动，等待视频帧", details)
+
+        if status == "error":
+            return error(
+                "video_source",
+                str(capture_status.get("message") or "视频源读取异常"),
+                {
+                    "source_kind": settings.capture_source_kind,
+                    "frames_read": capture_status.get("frames_read"),
+                    "frames_inferred": capture_status.get("frames_inferred"),
+                    "latest_frame_width": capture_status.get("latest_frame_width"),
+                    "latest_frame_height": capture_status.get("latest_frame_height"),
+                    "last_error": last_error,
+                },
+            )
+
     probe = await probe_video_source(settings, max_frames=1)
     return {
         "name": "video_source",
@@ -432,7 +473,10 @@ def config_summary(settings: Settings) -> dict[str, Any]:
     }
 
 
-async def collect_environment(settings: Settings) -> dict[str, Any]:
+async def collect_environment(
+    settings: Settings,
+    capture_status: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     checks: list[Check] = [
         check_python(),
         check_opencv(),
@@ -441,7 +485,7 @@ async def collect_environment(settings: Settings) -> dict[str, Any]:
     ]
 
     checks.extend(await check_database(settings))
-    checks.append(await check_video_source(settings))
+    checks.append(await check_video_source(settings, capture_status))
     checks.append(await check_stream_receiver(settings))
     checks.append(await check_inference_endpoint(settings))
     checks.append(await check_remote_api(settings))
