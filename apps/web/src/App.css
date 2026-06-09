@@ -74,6 +74,15 @@ h2 {
   text-wrap: balance;
 }
 
+h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.18;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
 .top-actions {
   display: flex;
   align-items: center;
@@ -431,45 +440,73 @@ h2 {
 }
 
 .signal-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  display: flex;
   gap: 12px;
   margin-bottom: 12px;
+  padding-bottom: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: #adc2df transparent;
+}
+
+.signal-grid::-webkit-scrollbar {
+  height: 8px;
+}
+
+.signal-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.signal-grid::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #adc2df;
 }
 
 .signal-card {
-  min-height: 92px;
-  padding: 15px;
+  flex: 0 0 236px;
+  min-width: 0;
+  min-height: 72px;
+  padding: 11px 12px;
   border: 1px solid var(--border);
+  border-left-width: 4px;
   border-radius: 8px;
-  background: var(--surface);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(244, 247, 251, 0.88)),
+    var(--surface);
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 12px;
+  grid-template-columns: 36px minmax(0, 1fr) 10px;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  scroll-snap-align: start;
   box-shadow: var(--shadow);
 }
 
 .signal-card.ok {
-  border-top-color: var(--green);
+  border-left-color: var(--green);
 }
 
 .signal-card.warn {
-  border-top-color: var(--amber);
+  border-left-color: var(--amber);
 }
 
 .signal-card.error {
-  border-top-color: var(--red);
+  border-left-color: var(--red);
 }
 
 .signal-icon {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
   display: grid;
   place-items: center;
   color: #ffffff;
   background: #1c2d49;
+}
+
+.signal-card > div:nth-child(2) {
+  min-width: 0;
 }
 
 .signal-card p,
@@ -483,15 +520,17 @@ h2 {
 
 .signal-card strong {
   display: block;
-  margin-top: 4px;
-  font-size: 17px;
+  margin-top: 2px;
+  font-size: 15px;
   line-height: 1.22;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dot {
-  width: 11px;
-  height: 11px;
+  width: 9px;
+  height: 9px;
   border-radius: 999px;
   flex: 0 0 auto;
 }
@@ -581,6 +620,103 @@ h2 {
   align-items: start;
 }
 
+.access-panel {
+  position: relative;
+  overflow: hidden;
+  border-top: 4px solid #1c2d49;
+  background:
+    linear-gradient(135deg, rgba(28, 45, 73, 0.06), rgba(15, 159, 119, 0.08)),
+    var(--surface);
+}
+
+.access-panel::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background-image:
+    linear-gradient(rgba(28, 45, 73, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(28, 45, 73, 0.08) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(90deg, transparent, #000000 18%, #000000 82%, transparent);
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.access-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.access-rail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr) 44px minmax(0, 1.25fr);
+  align-items: center;
+  gap: 0;
+  margin-bottom: 14px;
+}
+
+.access-rail i {
+  height: 2px;
+  background: linear-gradient(90deg, #8ba3c4, #0f9f77);
+}
+
+.rail-node {
+  min-height: 74px;
+  border: 1px solid #c7d5ea;
+  border-radius: 8px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 22px rgba(23, 32, 51, 0.06);
+}
+
+.rail-node span,
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.rail-node span {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.rail-node strong {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.22;
+  overflow-wrap: anywhere;
+}
+
+.access-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.access-column {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.access-column-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+
+.access-fields {
+  grid-template-columns: 1fr;
+}
+
 .field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -591,6 +727,10 @@ h2 {
   min-width: 0;
   display: grid;
   gap: 7px;
+}
+
+.field-span-full {
+  grid-column: 1 / -1;
 }
 
 .field-head {
@@ -604,18 +744,40 @@ h2 {
   font-weight: 800;
 }
 
+.field-head label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .field-head small {
   padding: 2px 6px;
   border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.field-head small.empty {
+  color: var(--muted);
+  background: var(--surface-muted);
+  border-color: var(--border);
+}
+
+.field-head small.set {
+  color: var(--green);
+  background: var(--green-bg);
+  border-color: #9fdcc7;
+}
+
+.field-head small.locked {
   color: var(--amber);
   background: var(--amber-bg);
-  border: 1px solid #edc979;
-  white-space: nowrap;
+  border-color: #edc979;
 }
 
 .config-field input,
 .config-field select {
   width: 100%;
+  min-width: 0;
   min-height: 40px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -624,6 +786,10 @@ h2 {
   background: #ffffff;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.config-field input::placeholder {
+  color: #7a879a;
 }
 
 .config-field input:focus-visible,
@@ -641,6 +807,12 @@ h2 {
 
 .secret-input input {
   min-width: 0;
+}
+
+.field-hint {
+  min-height: 18px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .icon-button {
@@ -987,12 +1159,25 @@ h2 {
   }
 
   .signal-grid,
+  .access-grid,
   .api-base-grid,
   .config-grid,
   .config-layout,
   .remote-action-grid,
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .access-rail {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .access-rail i {
+    width: 2px;
+    height: 16px;
+    justify-self: center;
+    background: linear-gradient(180deg, #8ba3c4, #0f9f77);
   }
 
   .config-toolbar {
@@ -1025,6 +1210,7 @@ h2 {
   }
 
   .signal-grid,
+  .access-grid,
   .api-base-grid,
   .auth-prompt-controls,
   .config-grid,
@@ -1034,6 +1220,17 @@ h2 {
   .metric-grid,
   .kv-grid {
     grid-template-columns: 1fr;
+  }
+
+  .signal-grid {
+    display: grid;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .signal-card {
+    flex-basis: auto;
+    width: 100%;
   }
 
   .top-actions {

@@ -105,7 +105,9 @@ type ConfigField = {
   input: 'text' | 'number' | 'password' | 'select' | 'url'
   options?: string[]
   placeholder?: string
+  helper?: string
   sensitive?: boolean
+  span?: 'full'
 }
 
 type ConfigGroup = {
@@ -132,17 +134,31 @@ const lockedConfigKeys = new Set([
   'SPOOL_SQLITE_PATH',
 ])
 
-const configGroups: ConfigGroup[] = [
-  {
-    eyebrow: 'Security',
-    title: '接口鉴权',
-    icon: ShieldCheck,
-    accent: 'accent-security',
-    fields: [
-      { key: 'API_AUTH_TOKEN', label: '入站 API token', input: 'password', sensitive: true, placeholder: '设置后保护除健康检查外的 API…' },
-      { key: 'CORS_ALLOWED_ORIGINS', label: '允许前端 Origin', input: 'text', placeholder: 'http://127.0.0.1:5173 http://localhost:5173…' },
-    ],
-  },
+const accessConfigGroup: ConfigGroup = {
+  eyebrow: 'Access',
+  title: '连接与鉴权',
+  icon: ShieldCheck,
+  accent: 'accent-security',
+  fields: [
+    {
+      key: 'API_AUTH_TOKEN',
+      label: '服务端 API_AUTH_TOKEN',
+      input: 'password',
+      sensitive: true,
+      placeholder: '留空关闭接口鉴权…',
+      helper: '保存到服务端配置；启用后，除健康检查外的接口都需要 Bearer token。',
+    },
+    {
+      key: 'CORS_ALLOWED_ORIGINS',
+      label: '允许访问的前端 Origin',
+      input: 'text',
+      placeholder: 'http://127.0.0.1:5173 http://localhost:5173…',
+      helper: '多个 Origin 用空格分隔；同源部署通常不用额外调整。',
+    },
+  ],
+}
+
+const workflowConfigGroups: ConfigGroup[] = [
   {
     eyebrow: 'Capture',
     title: '视频输入',
@@ -150,7 +166,14 @@ const configGroups: ConfigGroup[] = [
     accent: 'accent-video',
     fields: [
       { key: 'CAPTURE_SOURCE_KIND', label: '输入类型', input: 'select', options: ['http_mjpeg', 'rtsp', 'rtmp', 'camera', 'file'] },
-      { key: 'CAPTURE_SOURCE_URL', label: '拉流地址', input: 'url', placeholder: 'http://手机IP:8080/video 或 rtsp://host/live…' },
+      {
+        key: 'CAPTURE_SOURCE_URL',
+        label: '拉流地址',
+        input: 'url',
+        placeholder: 'http://手机IP:8080/video 或 rtsp://host/live…',
+        helper: '支持 Android IP Webcam、RTSP、RTMP、文件和本机摄像头。',
+        span: 'full',
+      },
       { key: 'CAPTURE_USERNAME', label: '拉流账号', input: 'text' },
       { key: 'CAPTURE_PASSWORD', label: '拉流密码', input: 'password', sensitive: true },
       { key: 'CAPTURE_FPS_LIMIT', label: '采集 FPS 上限', input: 'number' },
@@ -166,7 +189,14 @@ const configGroups: ConfigGroup[] = [
     fields: [
       { key: 'STREAM_MODE', label: '流模式', input: 'select', options: ['pull', 'push'] },
       { key: 'STREAM_PROTOCOL', label: '推流协议', input: 'select', options: ['http_mjpeg', 'rtsp', 'rtmp'] },
-      { key: 'STREAM_PUSH_URL', label: '推流地址', input: 'url', placeholder: 'rtmp://server/live/camera-1…' },
+      {
+        key: 'STREAM_PUSH_URL',
+        label: '推流地址',
+        input: 'url',
+        placeholder: 'rtmp://server/live/camera-1…',
+        helper: '只在流模式选择 push 时使用。',
+        span: 'full',
+      },
       { key: 'STREAM_RECEIVER_KIND', label: '接收器类型', input: 'select', options: ['none', 'mediamtx', 'nginx_rtmp', 'custom'] },
       { key: 'STREAM_RECEIVER_STATUS_URL', label: '接收器状态 URL', input: 'url', placeholder: 'http://server:9997/v3/config/global/get…' },
       { key: 'STREAM_USERNAME', label: '推流账号', input: 'text' },
@@ -179,8 +209,22 @@ const configGroups: ConfigGroup[] = [
     icon: Cpu,
     accent: 'accent-gpu',
     fields: [
-      { key: 'INFERENCE_ENDPOINT', label: '远端推理直连 URL', input: 'url', placeholder: 'http://API_HOST:8000…' },
-      { key: 'INFERENCE_API_TOKEN', label: '远端推理 API token', input: 'password', sensitive: true, placeholder: '远端 API 启用鉴权时填写…' },
+      {
+        key: 'INFERENCE_ENDPOINT',
+        label: '推理 API URL（可选）',
+        input: 'url',
+        placeholder: 'http://API_HOST:8000…',
+        helper: '留空时使用当前服务本机推理；填写后把帧发送到另一套推理 API。',
+        span: 'full',
+      },
+      {
+        key: 'INFERENCE_API_TOKEN',
+        label: '推理 API token（可选）',
+        input: 'password',
+        sensitive: true,
+        placeholder: '远端推理 API 启用鉴权时填写…',
+        helper: '只随推理请求发给 INFERENCE_ENDPOINT，不是当前前端登录 token。',
+      },
       { key: 'INFERENCE_DEVICE', label: '推理设备', input: 'select', options: ['auto', 'cpu', 'cuda'] },
       { key: 'INFERENCE_MODEL', label: '模型文件', input: 'text' },
       { key: 'CONFIDENCE_THRESHOLD', label: '置信度阈值', input: 'number' },
@@ -203,11 +247,24 @@ const configGroups: ConfigGroup[] = [
     icon: Database,
     accent: 'accent-db',
     fields: [
-      { key: 'DATABASE_URL', label: '数据库连接串', input: 'password', sensitive: true, placeholder: 'postgresql://user:password@host:5432/cv_stream…' },
+      {
+        key: 'DATABASE_URL',
+        label: '数据库连接串',
+        input: 'password',
+        sensitive: true,
+        placeholder: 'postgresql://user:password@host:5432/cv_stream…',
+        helper: '后端直连 PostgreSQL 或 TimescaleDB，不通过 SSH。',
+        span: 'full',
+      },
       { key: 'DATABASE_CONNECT_TIMEOUT', label: '连接超时秒数', input: 'number' },
       { key: 'DATABASE_BATCH_SIZE', label: '批量写入条数', input: 'number' },
       { key: 'DATABASE_FLUSH_INTERVAL_MS', label: '刷库间隔毫秒', input: 'number' },
-      { key: 'SPOOL_SQLITE_PATH', label: 'SQLite spool 路径', input: 'text' },
+      {
+        key: 'SPOOL_SQLITE_PATH',
+        label: '本地落盘队列路径',
+        input: 'text',
+        helper: '数据库不可用时先落盘缓存，恢复后再批量写入；内存队列仍用于运行时缓冲。',
+      },
     ],
   },
   {
@@ -216,9 +273,16 @@ const configGroups: ConfigGroup[] = [
     icon: Server,
     accent: 'accent-remote',
     fields: [
-      { key: 'REMOTE_API_BASE_URL', label: '直连 API Base URL', input: 'url', placeholder: 'http://API_HOST:8000…' },
-      { key: 'REMOTE_API_HOST', label: '远端 API 监听主机', input: 'text' },
-      { key: 'REMOTE_API_PORT', label: '远端 API 监听端口', input: 'number' },
+      {
+        key: 'REMOTE_API_BASE_URL',
+        label: '被管理 API Base URL（可选）',
+        input: 'url',
+        placeholder: 'http://API_HOST:8000…',
+        helper: '只有这台程序需要管理另一套 API 时填写；本机部署保持空。',
+        span: 'full',
+      },
+      { key: 'REMOTE_API_HOST', label: '被管理 API 监听主机（可选）', input: 'text' },
+      { key: 'REMOTE_API_PORT', label: '被管理 API 监听端口（可选）', input: 'number' },
       { key: 'REMOTE_SSH_HOST', label: 'SSH 管理主机', input: 'text', placeholder: '可选…' },
       { key: 'REMOTE_SSH_PORT', label: 'SSH 管理端口', input: 'number' },
       { key: 'REMOTE_SSH_USER', label: 'SSH 管理用户', input: 'text', placeholder: '可选…' },
@@ -239,6 +303,8 @@ const configGroups: ConfigGroup[] = [
     ],
   },
 ]
+
+const configGroups = [accessConfigGroup, ...workflowConfigGroups]
 
 const tabKeys = new Set<TabKey>(tabs.map((tab) => tab.key))
 const confidenceFormatter = new Intl.NumberFormat('zh-CN', {
@@ -493,24 +559,25 @@ function App() {
               <ShieldCheck size={18} aria-hidden="true" />
             </span>
             <div>
-              <p className="eyebrow">API Token</p>
-              <h2>当前 API 要求 token</h2>
+              <p className="eyebrow">Browser Token</p>
+              <h2>需要在当前浏览器保存访问令牌</h2>
             </div>
           </div>
           <div className="auth-prompt-controls">
             <div className="secret-input">
               <input
-                aria-label="API token"
+                aria-label="当前浏览器 API token"
                 autoComplete="off"
                 inputMode="text"
                 spellCheck={false}
                 type={quickTokenVisible ? 'text' : 'password'}
                 value={quickTokenDraft}
-                placeholder="输入 API_AUTH_TOKEN"
+                placeholder="输入服务端 API_AUTH_TOKEN…"
                 onChange={(event) => setQuickTokenDraft(event.target.value)}
               />
               <button
                 type="button"
+                aria-label={quickTokenVisible ? '隐藏当前浏览器 API token' : '显示当前浏览器 API token'}
                 className="icon-button"
                 title={quickTokenVisible ? '隐藏' : '显示'}
                 onClick={() => setQuickTokenVisible((current) => !current)}
@@ -520,7 +587,7 @@ function App() {
             </div>
             <button type="button" onClick={saveQuickApiToken} disabled={!quickTokenDraft.trim()}>
               <ShieldCheck size={17} aria-hidden="true" />
-              保存 token
+              保存浏览器令牌
             </button>
             <button type="button" onClick={clearQuickApiToken} disabled={!frontendApiToken && !quickTokenDraft}>
               <RotateCw size={17} aria-hidden="true" />
@@ -758,15 +825,16 @@ function SignalCard({
   fallback: string
 }) {
   const tone = check?.status ?? 'warn'
+  const message = check?.message ?? fallback
 
   return (
-    <article className={`signal-card ${tone}`}>
+    <article className={`signal-card ${tone}`} title={`${label}: ${message}`}>
       <div className="signal-icon">
         <Icon size={18} aria-hidden="true" />
       </div>
       <div>
         <p>{label}</p>
-        <strong>{check?.message ?? fallback}</strong>
+        <strong>{message}</strong>
       </div>
       <span className={`dot ${tone}`} aria-hidden="true" />
     </article>
@@ -928,6 +996,19 @@ function ConfigPage({
   const apiBaseDraft = apiBaseDraftState.source === frontendApiBase ? apiBaseDraftState.value : frontendApiBase
   const apiTokenDraft = apiTokenDraftState.source === frontendApiToken ? apiTokenDraftState.value : frontendApiToken
   const configuredRemoteApiBase = visibleDraft.REMOTE_API_BASE_URL ?? ''
+  const serverTokenConfigured = Boolean((visibleDraft.API_AUTH_TOKEN ?? '').trim())
+  const browserTokenConfigured = Boolean(frontendApiToken.trim())
+  const browserApiMode = frontendApiBase ? '直连 API' : '同源 /api'
+  const accessTone = serverTokenConfigured
+    ? browserTokenConfigured
+      ? 'ok'
+      : 'warn'
+    : 'ok'
+  const accessMessage = serverTokenConfigured
+    ? browserTokenConfigured
+      ? '服务端已启用鉴权，当前浏览器会自动携带 Bearer token。'
+      : '服务端已启用鉴权；需要在当前浏览器保存同一个 token 才能访问受保护接口。'
+    : '服务端未启用接口鉴权；当前浏览器不需要保存 token。'
 
   useEffect(() => {
     if (!dirty) {
@@ -980,7 +1061,7 @@ function ConfigPage({
   function saveFrontendApiToken() {
     const token = onFrontendApiTokenChange(apiTokenDraft)
     setApiTokenDraftState({ source: token, value: token })
-    setApiBaseMessage(token ? 'API token 已保存到当前浏览器' : 'API token 已清除')
+    setApiBaseMessage(token ? '浏览器令牌已保存' : '浏览器令牌已清除')
   }
 
   function toggleSensitiveField(key: string) {
@@ -1007,6 +1088,22 @@ function ConfigPage({
     }
   }
 
+  function renderConfigField(field: ConfigField, className?: string) {
+    return (
+      <ConfigFieldControl
+        className={className}
+        config={config}
+        field={field}
+        key={field.key}
+        locked={lockedConfigKeys.has(field.key)}
+        revealed={revealedFields.has(field.key)}
+        value={visibleDraft[field.key] ?? ''}
+        onChange={updateField}
+        onReveal={toggleSensitiveField}
+      />
+    )
+  }
+
   const saveMessage = saveError ?? formatSaveResult(saveResult)
   const remoteOutput = remoteError ?? formatRemoteOutput(remoteResult)
   const configProbeMessage = configProbeError ?? formatProbeSummary(configProbeResult)
@@ -1016,72 +1113,158 @@ function ConfigPage({
 
   return (
     <section className="config-layout config-editable">
-      {configGroups.map((group) => {
+      <div className="panel access-panel full-config">
+        <PanelHeading eyebrow={accessConfigGroup.eyebrow} title={accessConfigGroup.title} icon={ShieldCheck} />
+
+        <div className="access-rail" aria-label="浏览器到后端接口的连接状态">
+          <div className="rail-node">
+            <span>Browser</span>
+            <strong>{browserApiMode}</strong>
+          </div>
+          <i aria-hidden="true" />
+          <div className="rail-node">
+            <span>Auth</span>
+            <strong>{serverTokenConfigured ? '服务端要求 Bearer' : '未启用'}</strong>
+          </div>
+          <i aria-hidden="true" />
+          <div className="rail-node">
+            <span>API</span>
+            <strong>{frontendApiBase || '当前域名 /api'}</strong>
+          </div>
+        </div>
+
+        <div className={`notice ${accessTone}`}>{accessMessage}</div>
+
+        <div className="access-grid">
+          <section className="access-column">
+            <div className="access-column-head">
+              <div>
+                <p className="eyebrow">Server Rule</p>
+                <h3>服务端接口保护</h3>
+              </div>
+              <span className={`mini-status ${serverTokenConfigured ? 'ok' : 'warn'}`}>
+                {serverTokenConfigured ? '已启用' : '未启用'}
+              </span>
+            </div>
+            <div className="field-grid access-fields">
+              {accessConfigGroup.fields.map((field) => renderConfigField(field))}
+            </div>
+          </section>
+
+          <section className="access-column">
+            <div className="access-column-head">
+              <div>
+                <p className="eyebrow">Current Browser</p>
+                <h3>当前浏览器请求凭证</h3>
+              </div>
+              <span className={`mini-status ${browserTokenConfigured ? 'ok' : serverTokenConfigured ? 'warn' : 'ok'}`}>
+                {browserTokenConfigured ? '已保存' : serverTokenConfigured ? '待填写' : '不需要'}
+              </span>
+            </div>
+            <div className="field-grid access-fields">
+              <div className="config-field field-span-full">
+                <div className="field-head">
+                  <label htmlFor="frontend-api-base-url">浏览器 API Base URL</label>
+                  <small>{frontendApiBase ? '自定义' : '默认'}</small>
+                </div>
+                <input
+                  autoComplete="off"
+                  id="frontend-api-base-url"
+                  inputMode="url"
+                  name="FRONTEND_API_BASE_URL"
+                  spellCheck={false}
+                  type="url"
+                  value={apiBaseDraft}
+                  placeholder="留空使用当前域名 /api，或填写 http://API_HOST:8000…"
+                  onChange={(event) => setApiBaseDraftState({ source: frontendApiBase, value: event.target.value })}
+                />
+                <p className="field-hint">
+                  只保存在当前浏览器；本服务单端口部署时保持空即可。
+                </p>
+              </div>
+
+              <div className="config-field field-span-full">
+                <div className="field-head">
+                  <label htmlFor="frontend-api-auth-token">当前浏览器 Bearer token</label>
+                  <small>{frontendApiToken ? '已保存' : '未保存'}</small>
+                </div>
+                <div className="secret-input">
+                  <input
+                    autoComplete="off"
+                    id="frontend-api-auth-token"
+                    inputMode="text"
+                    name="FRONTEND_API_AUTH_TOKEN"
+                    spellCheck={false}
+                    type={apiTokenVisible ? 'text' : 'password'}
+                    value={apiTokenDraft}
+                    placeholder="填写服务端 API_AUTH_TOKEN 后保存到浏览器…"
+                    onChange={(event) => setApiTokenDraftState({ source: frontendApiToken, value: event.target.value })}
+                  />
+                  <button
+                    type="button"
+                    aria-label={apiTokenVisible ? '隐藏当前浏览器 token' : '显示当前浏览器 token'}
+                    className="icon-button"
+                    title={apiTokenVisible ? '隐藏' : '显示'}
+                    onClick={() => setApiTokenVisible((current) => !current)}
+                  >
+                    {apiTokenVisible ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+                  </button>
+                </div>
+                <p className="field-hint">
+                  这个值不会写入服务端配置，只会随当前浏览器的 API 请求发送。
+                </p>
+              </div>
+            </div>
+            <div className="action-row api-base-actions">
+              <button type="button" onClick={testFrontendApiBase} disabled={apiBasePending}>
+                <ShieldCheck size={17} aria-hidden="true" />
+                检测 API
+              </button>
+              <button type="button" onClick={() => saveFrontendApiBase()}>
+                <Save size={17} aria-hidden="true" />
+                保存浏览器连接
+              </button>
+              <button type="button" onClick={saveFrontendApiToken} disabled={!apiTokenDraft}>
+                <ShieldCheck size={17} aria-hidden="true" />
+                保存浏览器令牌
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setApiTokenDraftState({ source: '', value: '' })
+                  onFrontendApiTokenChange('')
+                  setApiBaseMessage('浏览器令牌已清除')
+                }}
+                disabled={!frontendApiToken && !apiTokenDraft}
+              >
+                <RotateCw size={17} aria-hidden="true" />
+                清除令牌
+              </button>
+              <button
+                type="button"
+                onClick={() => saveFrontendApiBase(configuredRemoteApiBase)}
+                disabled={!configuredRemoteApiBase}
+              >
+                <Server size={17} aria-hidden="true" />
+                使用配置中的 API
+              </button>
+              <button type="button" onClick={() => saveFrontendApiBase('')} disabled={!frontendApiBase && !apiBaseDraft}>
+                <RotateCw size={17} aria-hidden="true" />
+                恢复同源
+              </button>
+              {apiBaseMessage && <span className="action-result" aria-live="polite">{apiBaseMessage}</span>}
+            </div>
+          </section>
+        </div>
+      </div>
+
+      {workflowConfigGroups.map((group) => {
         const Icon = group.icon
         return (
           <div className={`panel config-card ${group.accent}`} key={group.title}>
             <PanelHeading eyebrow={group.eyebrow} title={group.title} icon={Icon} />
             <div className="field-grid">
-              {group.fields.map((field) => (
-                <label className="config-field" key={field.key}>
-                  <span className="field-head">
-                    <span>{field.label}</span>
-                    {lockedConfigKeys.has(field.key) && <small>运行锁定</small>}
-                  </span>
-                  {field.input === 'select' ? (
-                    <select
-                      autoComplete="off"
-                      name={field.key}
-                      value={visibleDraft[field.key] ?? ''}
-                      onChange={(event) => updateField(field.key, event.target.value)}
-                    >
-                      {(field.options ?? []).map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  ) : field.sensitive ? (
-                    <div className="secret-input">
-                      <input
-                        autoComplete="off"
-                        inputMode={inputModeForField(field)}
-                        name={field.key}
-                        spellCheck={false}
-                        type={revealedFields.has(field.key) ? 'text' : 'password'}
-                        step={field.input === 'number' ? numberStepForField(field) : undefined}
-                        value={visibleDraft[field.key] ?? ''}
-                        placeholder={field.placeholder ?? ''}
-                        onChange={(event) => updateField(field.key, event.target.value)}
-                      />
-                      <button
-                        type="button"
-                        className="icon-button"
-                        title={revealedFields.has(field.key) ? '隐藏' : '显示'}
-                        onClick={() => toggleSensitiveField(field.key)}
-                      >
-                        {revealedFields.has(field.key) ? (
-                          <EyeOff size={17} aria-hidden="true" />
-                        ) : (
-                          <Eye size={17} aria-hidden="true" />
-                        )}
-                      </button>
-                    </div>
-                  ) : (
-                    <input
-                      autoComplete="off"
-                      inputMode={inputModeForField(field)}
-                      name={field.key}
-                      spellCheck={false}
-                      type={field.input}
-                      step={field.input === 'number' ? numberStepForField(field) : undefined}
-                      value={visibleDraft[field.key] ?? ''}
-                      placeholder={placeholderForField(field, config)}
-                      onChange={(event) => updateField(field.key, event.target.value)}
-                    />
-                  )}
-                </label>
-              ))}
+              {group.fields.map((field) => renderConfigField(field))}
             </div>
             {group.title === '视频输入' && (
               <div className="action-row">
@@ -1110,97 +1293,6 @@ function ConfigPage({
         )
       })}
 
-      <div className="panel config-card accent-remote frontend-api-panel full-config">
-        <PanelHeading eyebrow="Browser API" title="前端 API 连接" icon={Server} />
-        <div className={`notice ${frontendApiBase ? 'warn' : 'ok'}`}>
-          {frontendApiBase
-            ? `当前浏览器直连 ${frontendApiBase}`
-            : '当前浏览器使用同源 /api。本地开发时由 Vite 代理到 127.0.0.1:8000。'}
-        </div>
-        <div className="api-base-grid">
-          <label className="config-field">
-            <span className="field-head">
-              <span>浏览器 API Base URL</span>
-            </span>
-            <input
-              autoComplete="off"
-              inputMode="url"
-              name="FRONTEND_API_BASE_URL"
-              spellCheck={false}
-              type="url"
-              value={apiBaseDraft}
-              placeholder="留空使用本地 /api，或填写 http://API_HOST:8000…"
-              onChange={(event) => setApiBaseDraftState({ source: frontendApiBase, value: event.target.value })}
-            />
-          </label>
-          <label className="config-field">
-            <span className="field-head">
-              <span>API token</span>
-              <small>{frontendApiToken ? '已保存' : '未保存'}</small>
-            </span>
-            <div className="secret-input">
-              <input
-                autoComplete="off"
-                inputMode="text"
-                name="FRONTEND_API_AUTH_TOKEN"
-                spellCheck={false}
-                type={apiTokenVisible ? 'text' : 'password'}
-                value={apiTokenDraft}
-                placeholder="保存到当前浏览器，请求时作为 Bearer token…"
-                onChange={(event) => setApiTokenDraftState({ source: frontendApiToken, value: event.target.value })}
-              />
-              <button
-                type="button"
-                className="icon-button"
-                title={apiTokenVisible ? '隐藏' : '显示'}
-                onClick={() => setApiTokenVisible((current) => !current)}
-              >
-                {apiTokenVisible ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
-              </button>
-            </div>
-          </label>
-          <div className="action-row api-base-actions">
-            <button type="button" onClick={testFrontendApiBase} disabled={apiBasePending || !apiBaseDraft.trim()}>
-              <ShieldCheck size={17} aria-hidden="true" />
-              检测 API
-            </button>
-            <button type="button" onClick={() => saveFrontendApiBase()}>
-              <Save size={17} aria-hidden="true" />
-              保存前端连接
-            </button>
-            <button type="button" onClick={saveFrontendApiToken} disabled={!apiTokenDraft}>
-              <ShieldCheck size={17} aria-hidden="true" />
-              保存 token
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setApiTokenDraftState({ source: '', value: '' })
-                onFrontendApiTokenChange('')
-                setApiBaseMessage('API token 已清除')
-              }}
-              disabled={!frontendApiToken && !apiTokenDraft}
-            >
-              <RotateCw size={17} aria-hidden="true" />
-              清除 token
-            </button>
-            <button
-              type="button"
-              onClick={() => saveFrontendApiBase(configuredRemoteApiBase)}
-              disabled={!configuredRemoteApiBase}
-            >
-              <Server size={17} aria-hidden="true" />
-              使用远端配置
-            </button>
-            <button type="button" onClick={() => saveFrontendApiBase('')} disabled={!frontendApiBase && !apiBaseDraft}>
-              <RotateCw size={17} aria-hidden="true" />
-              恢复本地
-            </button>
-            {apiBaseMessage && <span className="action-result" aria-live="polite">{apiBaseMessage}</span>}
-          </div>
-        </div>
-      </div>
-
       <div className="panel config-toolbar full-config">
         <div>
           <p className="eyebrow">Apply</p>
@@ -1221,7 +1313,7 @@ function ConfigPage({
           </button>
           <button
             type="button"
-              onClick={() => {
+            onClick={() => {
               setDraft({})
               setDirty(false)
             }}
@@ -1252,12 +1344,16 @@ function ConfigPage({
             : 'SSH 未配置；数据库、schema 应用和推理 API 仍可通过直连 URL 使用。'}
         </div>
         <div className="remote-password-row">
-          <label className="config-field">
-            <span className="field-head">
-              <span>SSH 配库密码</span>
-            </span>
+          <div className="config-field">
+            <div className="field-head">
+              <label htmlFor="remote-database-password">SSH 配库密码（可选）</label>
+              <small className={remoteDbPassword ? 'set' : 'empty'}>
+                {remoteDbPassword ? '已填写' : '未填写'}
+              </small>
+            </div>
             <input
               autoComplete="off"
+              id="remote-database-password"
               inputMode="text"
               name="REMOTE_DATABASE_PASSWORD"
               spellCheck={false}
@@ -1266,7 +1362,10 @@ function ConfigPage({
               placeholder="留空自动生成或使用脚本默认值…"
               onChange={(event) => setRemoteDbPassword(event.target.value)}
             />
-          </label>
+            <p className="field-hint">
+              只在使用 SSH 自动配置数据库时发送；普通数据库连接仍使用 DATABASE_URL。
+            </p>
+          </div>
         </div>
         <div className="remote-action-grid">
           {remoteActions.map((item) => {
@@ -1546,6 +1645,98 @@ function PanelHeading({
         <h2>{title}</h2>
       </div>
       <Icon size={22} aria-hidden="true" />
+    </div>
+  )
+}
+
+function ConfigFieldControl({
+  field,
+  value,
+  config,
+  locked,
+  revealed,
+  className = '',
+  onChange,
+  onReveal,
+}: {
+  field: ConfigField
+  value: string
+  config?: Record<string, unknown>
+  locked: boolean
+  revealed: boolean
+  className?: string
+  onChange: (key: string, value: string) => void
+  onReveal: (key: string) => void
+}) {
+  const inputId = `config-${field.key.toLowerCase().replace(/_/g, '-')}`
+  const fieldClassName = [
+    'config-field',
+    field.span === 'full' ? 'field-span-full' : '',
+    className,
+  ].filter(Boolean).join(' ')
+  const displayValue = value.trim()
+  const metaLabel = locked ? '运行锁定' : displayValue ? '已设置' : '未设置'
+  const hint = field.helper ?? (displayValue ? '当前配置值已加载。' : '未设置时使用系统默认值。')
+
+  return (
+    <div className={fieldClassName}>
+      <div className="field-head">
+        <label htmlFor={inputId}>{field.label}</label>
+        <small className={locked ? 'locked' : displayValue ? 'set' : 'empty'}>{metaLabel}</small>
+      </div>
+      {field.input === 'select' ? (
+        <select
+          autoComplete="off"
+          id={inputId}
+          name={field.key}
+          value={value}
+          onChange={(event) => onChange(field.key, event.target.value)}
+        >
+          {(field.options ?? []).map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      ) : field.sensitive ? (
+        <div className="secret-input">
+          <input
+            autoComplete="off"
+            id={inputId}
+            inputMode={inputModeForField(field)}
+            name={field.key}
+            spellCheck={false}
+            type={revealed ? 'text' : 'password'}
+            step={field.input === 'number' ? numberStepForField(field) : undefined}
+            value={value}
+            placeholder={placeholderForField(field, config)}
+            onChange={(event) => onChange(field.key, event.target.value)}
+          />
+          <button
+            type="button"
+            aria-label={revealed ? `隐藏${field.label}` : `显示${field.label}`}
+            className="icon-button"
+            title={revealed ? '隐藏' : '显示'}
+            onClick={() => onReveal(field.key)}
+          >
+            {revealed ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+          </button>
+        </div>
+      ) : (
+        <input
+          autoComplete="off"
+          id={inputId}
+          inputMode={inputModeForField(field)}
+          name={field.key}
+          spellCheck={false}
+          type={field.input}
+          step={field.input === 'number' ? numberStepForField(field) : undefined}
+          value={value}
+          placeholder={placeholderForField(field, config)}
+          onChange={(event) => onChange(field.key, event.target.value)}
+        />
+      )}
+      <p className="field-hint">{hint}</p>
     </div>
   )
 }
