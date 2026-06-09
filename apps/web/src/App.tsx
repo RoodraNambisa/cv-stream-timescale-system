@@ -5,6 +5,7 @@ import {
   BarChart3,
   Cpu,
   Database,
+  ExternalLink,
   Eye,
   EyeOff,
   Focus,
@@ -585,6 +586,9 @@ function App() {
     return environmentChecks.get(name)
   }
 
+  const grafanaCheck = checkFor('grafana')
+  const grafanaHref = grafanaEntryHref(grafanaCheck, environment.data?.config)
+
   function handleTabChange(tab: TabKey) {
     setActiveTab(tab)
     writeTabToUrl(tab, 'push')
@@ -633,6 +637,19 @@ function App() {
             <ShieldCheck size={16} aria-hidden="true" />
             {environmentText}
           </span>
+          {grafanaHref && (
+            <a
+              className="top-action-link grafana-entry-link"
+              href={grafanaHref}
+              rel="noreferrer"
+              target="_blank"
+              title="打开 Grafana 监控面板"
+            >
+              <Gauge size={17} aria-hidden="true" />
+              <span>Grafana</span>
+              <ExternalLink size={14} aria-hidden="true" />
+            </a>
+          )}
           <button
             type="button"
             title="刷新配置"
@@ -2410,6 +2427,50 @@ function formatRemoteOutput(result?: Record<string, unknown>): string {
   ].filter(Boolean)
 
   return lines.join('\n\n')
+}
+
+function grafanaEntryHref(
+  check: EnvironmentCheck | undefined,
+  config: Record<string, unknown> | undefined,
+): string {
+  if (check?.status !== 'ok') {
+    return ''
+  }
+
+  const observability = pickObject(config, 'observability')
+  const dashboardUrl = stringValue(
+    check.details.dashboard_url || observability.grafana_dashboard_url,
+  ).trim()
+
+  return toGrafanaProxyHref(dashboardUrl)
+}
+
+function toGrafanaProxyHref(value: string): string {
+  const fallback = '/grafana/'
+  const trimmed = value.trim()
+
+  if (!trimmed || trimmed === '-') {
+    return fallback
+  }
+
+  if (trimmed.startsWith('/grafana')) {
+    return trimmed
+  }
+
+  if (trimmed.startsWith('/')) {
+    return `/grafana${trimmed === '/' ? '/' : trimmed}`
+  }
+
+  try {
+    const url = new URL(trimmed)
+    const path = `${url.pathname}${url.search}${url.hash}`
+    if (url.pathname.startsWith('/grafana')) {
+      return path || fallback
+    }
+    return `/grafana${url.pathname === '/' ? '/' : path}`
+  } catch {
+    return fallback
+  }
 }
 
 function stringValue(value: unknown, fallback = ''): string {

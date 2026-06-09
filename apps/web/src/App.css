@@ -91,6 +91,38 @@ h3 {
   justify-content: flex-end;
 }
 
+.top-action-link {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.top-action-link:hover {
+  border-color: #aeb9ac;
+  background: var(--surface-muted);
+}
+
+.top-action-link:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.grafana-entry-link {
+  color: var(--green);
+  border-color: #9fdcc7;
+  background: var(--green-bg);
+}
+
 .auth-prompt {
   display: grid;
   grid-template-columns: minmax(0, 0.8fr) minmax(360px, 1fr);
@@ -1462,7 +1494,8 @@ h3 {
   }
 
   .top-actions button,
-  .top-actions .pill {
+  .top-actions .pill,
+  .top-actions .top-action-link {
     flex: 1 1 auto;
     justify-content: center;
   }
