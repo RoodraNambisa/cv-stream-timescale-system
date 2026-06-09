@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   ArrowDownUp,
@@ -102,6 +102,7 @@ type ConfigField = {
   label: string
   input: 'text' | 'number' | 'password' | 'select' | 'url'
   options?: string[]
+  optionLabels?: Record<string, string>
   placeholder?: string
   helper?: string
   sensitive?: boolean
@@ -149,51 +150,123 @@ const accessConfigGroup: ConfigGroup = {
   ],
 }
 
+const streamModeField: ConfigField = {
+  key: 'STREAM_MODE',
+  label: '接入方式',
+  input: 'select',
+  options: ['pull', 'push'],
+  optionLabels: {
+    pull: '拉流：系统主动读取视频 URL',
+    push: '接收推流：设备推到接收器',
+  },
+  helper: '两种方式互斥；切换后只显示对应配置。',
+}
+
+const pullVideoFields: ConfigField[] = [
+  {
+    key: 'CAPTURE_SOURCE_KIND',
+    label: '输入类型',
+    input: 'select',
+    options: ['http_mjpeg', 'rtsp', 'rtmp', 'camera', 'file'],
+    optionLabels: {
+      http_mjpeg: 'HTTP MJPEG',
+      rtsp: 'RTSP',
+      rtmp: 'RTMP',
+      camera: '本机摄像头',
+      file: '视频文件',
+    },
+  },
+  {
+    key: 'CAPTURE_SOURCE_URL',
+    label: '视频地址',
+    input: 'url',
+    placeholder: 'http://手机IP:8080/video 或 rtsp://host/live…',
+    helper: '支持 Android IP Webcam、RTSP、RTMP、文件和本机摄像头。',
+    span: 'full',
+  },
+]
+
+const pushVideoFields: ConfigField[] = [
+  {
+    key: 'STREAM_PROTOCOL',
+    label: '推流协议',
+    input: 'select',
+    options: ['rtsp', 'rtmp'],
+    optionLabels: {
+      rtsp: 'RTSP',
+      rtmp: 'RTMP',
+    },
+  },
+  {
+    key: 'STREAM_RECEIVER_KIND',
+    label: '接收器类型',
+    input: 'select',
+    options: ['none', 'mediamtx', 'nginx_rtmp', 'custom'],
+    optionLabels: {
+      none: '不托管接收器',
+      mediamtx: 'MediaMTX',
+      nginx_rtmp: 'nginx-rtmp',
+      custom: '自定义',
+    },
+  },
+  {
+    key: 'STREAM_PUSH_URL',
+    label: '设备推送地址',
+    input: 'url',
+    placeholder: 'rtmp://server/live/camera-1…',
+    helper: '给手机、摄像头或推流客户端使用的目标地址。',
+    span: 'full',
+  },
+  {
+    key: 'CAPTURE_SOURCE_URL',
+    label: '后端读取地址',
+    input: 'url',
+    placeholder: 'rtsp://server/live/camera-1 或 rtmp://server/live/camera-1…',
+    helper: '设备推到接收器后，后端从这个播放地址读取帧。',
+    span: 'full',
+  },
+  {
+    key: 'STREAM_RECEIVER_STATUS_URL',
+    label: '接收器状态 URL',
+    input: 'url',
+    placeholder: 'http://server:9997/v3/config/global/get…',
+    helper: 'MediaMTX API、nginx-rtmp stat 或自定义状态接口。',
+    span: 'full',
+  },
+]
+
+const captureMetaFields: ConfigField[] = [
+  { key: 'CAPTURE_FPS_LIMIT', label: '采集 FPS 上限', input: 'number' },
+  { key: 'CAPTURE_DEVICE_ID', label: '设备 ID', input: 'number' },
+  { key: 'CAPTURE_TASK_ID', label: '任务 ID', input: 'number' },
+]
+
+const pullCredentialFields: ConfigField[] = [
+  { key: 'CAPTURE_USERNAME', label: '账号', input: 'text' },
+  { key: 'CAPTURE_PASSWORD', label: '密码', input: 'password', sensitive: true },
+]
+
+const pushCredentialFields: ConfigField[] = [
+  { key: 'STREAM_USERNAME', label: '账号', input: 'text' },
+  { key: 'STREAM_PASSWORD', label: '密码', input: 'password', sensitive: true },
+]
+
+const videoAccessConfigGroup: ConfigGroup = {
+  eyebrow: 'Video Access',
+  title: '视频接入',
+  icon: Video,
+  accent: 'accent-video',
+  fields: [
+    streamModeField,
+    ...pullVideoFields,
+    ...pushVideoFields,
+    ...pullCredentialFields,
+    ...pushCredentialFields,
+    ...captureMetaFields,
+  ],
+}
+
 const workflowConfigGroups: ConfigGroup[] = [
-  {
-    eyebrow: 'Capture',
-    title: '视频输入',
-    icon: Video,
-    accent: 'accent-video',
-    fields: [
-      { key: 'CAPTURE_SOURCE_KIND', label: '输入类型', input: 'select', options: ['http_mjpeg', 'rtsp', 'rtmp', 'camera', 'file'] },
-      {
-        key: 'CAPTURE_SOURCE_URL',
-        label: '拉流地址',
-        input: 'url',
-        placeholder: 'http://手机IP:8080/video 或 rtsp://host/live…',
-        helper: '支持 Android IP Webcam、RTSP、RTMP、文件和本机摄像头。',
-        span: 'full',
-      },
-      { key: 'CAPTURE_USERNAME', label: '拉流账号', input: 'text' },
-      { key: 'CAPTURE_PASSWORD', label: '拉流密码', input: 'password', sensitive: true },
-      { key: 'CAPTURE_FPS_LIMIT', label: '采集 FPS 上限', input: 'number' },
-      { key: 'CAPTURE_DEVICE_ID', label: '设备 ID', input: 'number' },
-      { key: 'CAPTURE_TASK_ID', label: '任务 ID', input: 'number' },
-    ],
-  },
-  {
-    eyebrow: 'Stream',
-    title: '推流接收',
-    icon: RadioTower,
-    accent: 'accent-stream',
-    fields: [
-      { key: 'STREAM_MODE', label: '流模式', input: 'select', options: ['pull', 'push'] },
-      { key: 'STREAM_PROTOCOL', label: '推流协议', input: 'select', options: ['http_mjpeg', 'rtsp', 'rtmp'] },
-      {
-        key: 'STREAM_PUSH_URL',
-        label: '推流地址',
-        input: 'url',
-        placeholder: 'rtmp://server/live/camera-1…',
-        helper: '只在流模式选择 push 时使用。',
-        span: 'full',
-      },
-      { key: 'STREAM_RECEIVER_KIND', label: '接收器类型', input: 'select', options: ['none', 'mediamtx', 'nginx_rtmp', 'custom'] },
-      { key: 'STREAM_RECEIVER_STATUS_URL', label: '接收器状态 URL', input: 'url', placeholder: 'http://server:9997/v3/config/global/get…' },
-      { key: 'STREAM_USERNAME', label: '推流账号', input: 'text' },
-      { key: 'STREAM_PASSWORD', label: '推流密码', input: 'password', sensitive: true },
-    ],
-  },
   {
     eyebrow: 'Inference',
     title: '推理配置',
@@ -295,7 +368,7 @@ const workflowConfigGroups: ConfigGroup[] = [
   },
 ]
 
-const configGroups = [accessConfigGroup, ...workflowConfigGroups]
+const configGroups = [accessConfigGroup, videoAccessConfigGroup, ...workflowConfigGroups]
 
 const tabKeys = new Set<TabKey>(tabs.map((tab) => tab.key))
 const confidenceFormatter = new Intl.NumberFormat('zh-CN', {
@@ -974,7 +1047,13 @@ function ConfigPage({
   }, [dirty])
 
   function updateField(key: string, value: string) {
-    setDraft((current) => ({ ...(dirty ? current : currentDraft), [key]: value }))
+    setDraft((current) => {
+      const next = { ...(dirty ? current : currentDraft), [key]: value }
+      if (key === 'STREAM_MODE' && value === 'push' && !['rtsp', 'rtmp'].includes(next.STREAM_PROTOCOL ?? '')) {
+        next.STREAM_PROTOCOL = 'rtmp'
+      }
+      return next
+    })
     setDirty(true)
   }
 
@@ -1054,6 +1133,15 @@ function ConfigPage({
         </div>
       </div>
 
+      <VideoAccessPanel
+        mode={visibleDraft.STREAM_MODE === 'push' ? 'push' : 'pull'}
+        probePending={probePending}
+        probeResult={probeResult}
+        supportedPushProtocols={videoConfig?.supported_push_protocols ?? ['rtsp', 'rtmp']}
+        renderConfigField={renderConfigField}
+        onProbe={onProbe}
+      />
+
       {workflowConfigGroups.map((group) => {
         const Icon = group.icon
         return (
@@ -1062,24 +1150,6 @@ function ConfigPage({
             <div className="field-grid">
               {group.fields.map((field) => renderConfigField(field))}
             </div>
-            {group.title === '视频输入' && (
-              <div className="action-row">
-                <button type="button" onClick={onProbe} disabled={probePending}>
-                  <Play size={17} aria-hidden="true" />
-                  检测视频配置
-                </button>
-                {probeResult && (
-                  <span className="action-result" aria-live="polite">{String(probeResult.message ?? probeResult.status)}</span>
-                )}
-              </div>
-            )}
-            {group.title === '推流接收' && (
-              <div className="tag-row">
-                {(videoConfig?.supported_push_protocols ?? ['rtsp', 'rtmp']).map((item) => (
-                  <span className="tag" key={item}>{item}</span>
-                ))}
-              </div>
-            )}
             {group.title === '推理配置' && (
               <div className={`notice ${inferenceStatus?.status ?? 'warn'}`}>
                 {inferenceStatus?.message ?? '推理状态检测中…'}
@@ -1182,6 +1252,89 @@ function ConfigPage({
         <pre className="terminal-output" aria-live="polite">{remoteOutput || '等待远端操作…'}</pre>
       </div>
     </section>
+  )
+}
+
+function VideoAccessPanel({
+  mode,
+  supportedPushProtocols,
+  probePending,
+  probeResult,
+  renderConfigField,
+  onProbe,
+}: {
+  mode: 'pull' | 'push'
+  supportedPushProtocols: string[]
+  probePending: boolean
+  probeResult?: Record<string, unknown>
+  renderConfigField: (field: ConfigField, className?: string) => ReactNode
+  onProbe: () => void
+}) {
+  const isPush = mode === 'push'
+  const modeFields = isPush ? pushVideoFields : pullVideoFields
+  const credentialFields = isPush ? pushCredentialFields : pullCredentialFields
+
+  return (
+    <div className={`panel config-card accent-video video-access-card full-config mode-${mode}`}>
+      <PanelHeading eyebrow={videoAccessConfigGroup.eyebrow} title={videoAccessConfigGroup.title} icon={Video} />
+
+      <div className="video-mode-shell">
+        <div className="video-mode-select">
+          {renderConfigField(streamModeField)}
+        </div>
+        <div className="video-mode-summary" aria-live="polite">
+          <span>{isPush ? '接收推流模式' : '主动拉流模式'}</span>
+          <strong>
+            {isPush
+              ? '设备先推到接收器，后端再从播放地址读取帧。'
+              : '后端直接从手机、摄像头、文件或网络流读取帧。'}
+          </strong>
+        </div>
+      </div>
+
+      <div className="video-access-grid">
+        <section className="video-config-section">
+          <div className="section-head">
+            <p className="eyebrow">{isPush ? 'Push Receiver' : 'Pull Source'}</p>
+            <h3>{isPush ? '接收推流' : '拉流输入'}</h3>
+          </div>
+          <div className="field-grid">
+            {modeFields.map((field) => renderConfigField(field))}
+          </div>
+        </section>
+
+        <section className="video-config-section">
+          <div className="section-head">
+            <p className="eyebrow">Credentials</p>
+            <h3>访问凭证</h3>
+          </div>
+          <div className="field-grid">
+            {credentialFields.map((field) => renderConfigField(field))}
+          </div>
+          <div className="tag-row">
+            {(isPush ? supportedPushProtocols : ['http_mjpeg', 'rtsp', 'rtmp', 'camera', 'file']).map((item) => (
+              <span className="tag" key={item}>{item}</span>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="video-meta-row">
+        <div className="field-grid">
+          {captureMetaFields.map((field) => renderConfigField(field))}
+        </div>
+      </div>
+
+      <div className="action-row">
+        <button type="button" onClick={onProbe} disabled={probePending}>
+          <Play size={17} aria-hidden="true" />
+          检测视频配置
+        </button>
+        {probeResult && (
+          <span className="action-result" aria-live="polite">{String(probeResult.message ?? probeResult.status)}</span>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -1490,7 +1643,7 @@ function ConfigFieldControl({
         >
           {(field.options ?? []).map((option) => (
             <option key={option} value={option}>
-              {option}
+              {field.optionLabels?.[option] ?? option}
             </option>
           ))}
         </select>
@@ -1561,7 +1714,7 @@ function buildConfigDraft(
   videoConfig: VideoConfig | undefined,
 ): ConfigDraft {
   const capture = videoConfig?.capture ?? pickObject(config, 'capture')
-  const stream = videoConfig?.stream ?? pickObject(config, 'stream')
+  const stream = { ...pickObject(config, 'stream'), ...(videoConfig?.stream ?? {}) }
   const inference = pickObject(config, 'inference')
   const analysis = pickObject(config, 'analysis')
   const database = pickObject(config, 'database')

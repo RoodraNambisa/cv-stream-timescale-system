@@ -28,6 +28,8 @@ def video_config_summary(settings: Settings) -> dict[str, Any]:
             "mode": settings.stream_mode,
             "protocol": settings.stream_protocol,
             "push_url": settings.stream_push_url,
+            "receiver_kind": settings.stream_receiver_kind,
+            "receiver_status_url": settings.stream_receiver_status_url,
             "username": settings.stream_username,
             "password": settings.stream_password,
         },

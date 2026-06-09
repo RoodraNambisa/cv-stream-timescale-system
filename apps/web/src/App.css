@@ -674,6 +674,74 @@ h3 {
   margin-top: 13px;
 }
 
+.video-access-card {
+  background:
+    linear-gradient(135deg, rgba(47, 111, 237, 0.05), rgba(15, 159, 119, 0.05)),
+    var(--surface);
+}
+
+.video-mode-shell {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.6fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.video-mode-select,
+.video-mode-summary,
+.video-config-section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.video-mode-select {
+  padding: 13px;
+}
+
+.video-mode-summary {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 14px;
+  border-color: #adc2df;
+}
+
+.video-mode-summary span {
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.video-mode-summary strong {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.video-access-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.75fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.video-config-section {
+  padding: 14px;
+}
+
+.section-head {
+  margin-bottom: 13px;
+}
+
+.video-meta-row {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 .field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1102,6 +1170,8 @@ h3 {
   .signal-grid,
   .config-grid,
   .config-layout,
+  .video-access-grid,
+  .video-mode-shell,
   .remote-action-grid,
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1141,6 +1211,8 @@ h3 {
   .config-grid,
   .config-layout,
   .field-grid,
+  .video-access-grid,
+  .video-mode-shell,
   .remote-action-grid,
   .metric-grid,
   .kv-grid {
