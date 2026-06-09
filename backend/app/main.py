@@ -1,8 +1,9 @@
 import secrets
 from typing import Any, Optional
 
+import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
@@ -28,6 +29,17 @@ spool = DetectionSpool()
 capture = CaptureManager(spool)
 AUTH_EXEMPT_PATHS = {"/api/health"}
 WEB_DIST_DIR = PROJECT_ROOT / "apps" / "web" / "dist"
+GRAFANA_PROXY_BASE_URL = "http://127.0.0.1:3000"
+HOP_BY_HOP_HEADERS = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+}
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -265,6 +277,66 @@ async def infer_image(file: UploadFile = File(...)) -> dict:
 @app.post("/api/remote/{action}")
 async def remote_action(action: str, request: Optional[RemoteActionRequest] = None) -> dict:
     return await run_remote_action(action, get_settings(), request)
+
+
+@app.get("/grafana")
+async def grafana_root_redirect() -> RedirectResponse:
+    return RedirectResponse("/grafana/")
+
+
+@app.api_route(
+    "/grafana/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
+async def grafana_proxy(path: str, request: Request) -> Response:
+    target_url = f"{GRAFANA_PROXY_BASE_URL}/grafana/{path}"
+    if request.url.query:
+        target_url = f"{target_url}?{request.url.query}"
+
+    headers = _proxy_request_headers(request)
+    body = await request.body()
+    async with httpx.AsyncClient(follow_redirects=False, timeout=30) as client:
+        upstream = await client.request(
+            request.method,
+            target_url,
+            content=body,
+            headers=headers,
+        )
+
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers=_proxy_response_headers(upstream.headers),
+        media_type=upstream.headers.get("content-type"),
+    )
+
+
+def _proxy_request_headers(request: Request) -> dict[str, str]:
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != "host"
+    }
+    forwarded_host = request.headers.get("host", "")
+    if forwarded_host:
+        headers["x-forwarded-host"] = forwarded_host
+    headers["host"] = "127.0.0.1:3000"
+    headers["x-forwarded-proto"] = request.url.scheme
+    headers["x-forwarded-prefix"] = "/grafana"
+    return headers
+
+
+def _proxy_response_headers(headers: httpx.Headers) -> dict[str, str]:
+    proxied = {
+        key: value
+        for key, value in headers.items()
+        if key.lower() not in HOP_BY_HOP_HEADERS
+        and key.lower() not in {"content-encoding", "content-length"}
+    }
+    location = proxied.get("location")
+    if location and location.startswith(GRAFANA_PROXY_BASE_URL):
+        proxied["location"] = location.removeprefix(GRAFANA_PROXY_BASE_URL)
+    return proxied
 
 
 if WEB_DIST_DIR.exists():

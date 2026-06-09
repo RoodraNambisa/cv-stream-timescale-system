@@ -20,13 +20,23 @@ case "$ACTION" in
       fi
       nohup '$REMOTE_PYTHON' -m uvicorn backend.app.main:app --host '$REMOTE_API_HOST' --port '$REMOTE_API_PORT' > runtime/remote_api.log 2>&1 &
       echo \$! > runtime/remote_api.pid
-      sleep 2
       '$REMOTE_PYTHON' - <<'PY'
 import json
+import time
 import urllib.request
 
-with urllib.request.urlopen('http://$REMOTE_API_HEALTH_HOST:$REMOTE_API_PORT/api/health', timeout=5) as response:
-    print(json.dumps(json.load(response), ensure_ascii=False))
+url = 'http://$REMOTE_API_HEALTH_HOST:$REMOTE_API_PORT/api/health'
+last_error = None
+for _ in range(60):
+    try:
+        with urllib.request.urlopen(url, timeout=3) as response:
+            print(json.dumps(json.load(response), ensure_ascii=False))
+            break
+    except Exception as exc:
+        last_error = exc
+        time.sleep(0.5)
+else:
+    raise SystemExit(f'health_check_failed {last_error}')
 PY
     "
     ;;
