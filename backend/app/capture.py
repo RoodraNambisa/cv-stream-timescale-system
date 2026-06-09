@@ -40,6 +40,7 @@ class CaptureState:
     latest_frame_version: int = 0
     latest_frame_width: int = 0
     latest_frame_height: int = 0
+    latest_inference_frame_index: int = 0
 
 
 class CaptureManager:
@@ -50,6 +51,7 @@ class CaptureManager:
         self._task: asyncio.Task | None = None
         self._stop_event: asyncio.Event | None = None
         self._inference_task: asyncio.Task | None = None
+        self._last_inference_submit_frame = 0
 
     async def start(self, request: CaptureStartRequest | None = None) -> dict[str, Any]:
         request = request or CaptureStartRequest()
@@ -98,6 +100,7 @@ class CaptureManager:
                 stopped_at=None,
                 settings_locked=locked_settings,
             )
+            self._last_inference_submit_frame = 0
             self._stop_event = asyncio.Event()
             self._task = asyncio.create_task(
                 self._run(settings, request, source, self._stop_event)
@@ -240,7 +243,11 @@ class CaptureManager:
                     height, width = frame.shape[:2]
                     await self._store_latest_frame(image_bytes, frame_index, width, height)
 
-                if frame_index % frame_interval == 0 and self._inference_available():
+                if (
+                    self._inference_available()
+                    and frame_index - self._last_inference_submit_frame >= frame_interval
+                ):
+                    self._last_inference_submit_frame = frame_index
                     self._inference_task = asyncio.create_task(
                         self._infer_and_enqueue(
                             runtime_settings,
@@ -305,6 +312,7 @@ class CaptureManager:
             await self._update_state(
                 message=f"推理完成，检测到 {len(records)} 个目标",
                 last_error=None,
+                latest_inference_frame_index=frame_index,
             )
         except asyncio.CancelledError:
             raise
@@ -366,6 +374,10 @@ class CaptureManager:
                 latest_frame_version=updates.get("latest_frame_version", current.latest_frame_version),
                 latest_frame_width=updates.get("latest_frame_width", current.latest_frame_width),
                 latest_frame_height=updates.get("latest_frame_height", current.latest_frame_height),
+                latest_inference_frame_index=updates.get(
+                    "latest_inference_frame_index",
+                    current.latest_inference_frame_index,
+                ),
             )
 
     async def _update_state(self, **updates: Any) -> None:
@@ -389,6 +401,7 @@ class CaptureManager:
             "latest_frame_version": self._state.latest_frame_version,
             "latest_frame_width": self._state.latest_frame_width,
             "latest_frame_height": self._state.latest_frame_height,
+            "latest_inference_frame_index": self._state.latest_inference_frame_index,
         }
 
 

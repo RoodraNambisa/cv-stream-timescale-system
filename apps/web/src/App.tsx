@@ -793,6 +793,7 @@ function FrameConsole({
   const tone = toneFromRuntime(captureStatus?.status)
   const recentDetections = captureStatus?.recent_detections ?? []
   const latestFrameVersion = captureStatus?.latest_frame_version ?? 0
+  const latestInferenceFrameIndex = captureStatus?.latest_inference_frame_index ?? 0
   const frameWidth = captureStatus?.latest_frame_width ?? 0
   const frameHeight = captureStatus?.latest_frame_height ?? 0
   const [framePreviewUrl, setFramePreviewUrl] = useState('')
@@ -803,7 +804,25 @@ function FrameConsole({
   const previewActive = captureStatus?.status === 'running' || latestFrameVersion > 0
   const visibleFramePreviewUrl = previewActive ? framePreviewUrl : ''
   const displayFrameNumber = previewFrameVersion || captureStatus?.frames_read || 0
-  const detectionBoxes = recentDetections
+  const inferenceConfig = pickObject(config, 'inference')
+  const configuredFrameInterval = Number(inferenceConfig.frame_interval ?? 10)
+  const maxOverlayLagFrames = Math.max(
+    8,
+    Math.min(30, (Number.isFinite(configuredFrameInterval) ? configuredFrameInterval : 10) * 2),
+  )
+  const overlayLagFrames = latestInferenceFrameIndex
+    ? Math.max(displayFrameNumber - latestInferenceFrameIndex, 0)
+    : 0
+  const overlayFresh = latestInferenceFrameIndex > 0 && overlayLagFrames <= maxOverlayLagFrames
+  const overlayDetections = overlayFresh
+    ? recentDetections.filter((detection) => detection.frame_index === latestInferenceFrameIndex)
+    : []
+  const overlayStatus = latestInferenceFrameIndex
+    ? overlayFresh
+      ? `检测延迟 ${overlayLagFrames} 帧`
+      : `检测滞后 ${overlayLagFrames} 帧，已隐藏旧框`
+    : '等待检测框…'
+  const detectionBoxes = overlayDetections
     .map((detection) => ({
       detection,
       style: detectionBoxStyle(detection, frameWidth, frameHeight),
@@ -920,7 +939,7 @@ function FrameConsole({
           </div>
         )}
         <div className="frame-footer">
-          <span>{inferenceStatus?.message ?? '推理状态检测中…'}</span>
+          <span>{inferenceStatus?.message ?? '推理状态检测中…'} · {overlayStatus}</span>
           <span>{captureStatus?.detections_queued ?? 0} queued</span>
         </div>
       </div>

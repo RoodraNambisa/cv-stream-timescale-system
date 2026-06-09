@@ -69,6 +69,7 @@ export type CaptureStatus = {
   latest_frame_version: number
   latest_frame_width: number
   latest_frame_height: number
+  latest_inference_frame_index: number
 }
 
 export type AnalysisSummary = {
