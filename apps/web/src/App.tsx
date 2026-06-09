@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   ArrowDownUp,
@@ -7,6 +7,7 @@ import {
   Database,
   Eye,
   EyeOff,
+  Focus,
   Gauge,
   HardDrive,
   Layers3,
@@ -123,9 +124,9 @@ type ConfigGroup = {
 type ConfigDraft = Record<string, string>
 type ConfigInputMode = 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url'
 type ConfigSectionKey = 'access' | 'video' | 'inference' | 'storage' | 'observability' | 'remote'
-type FrameDisplayMode = 'contain' | 'cover'
+type FrameDisplayMode = 'contain' | 'cover' | 'adaptive'
 
-const FRAME_DISPLAY_MODE_STORAGE_KEY = 'cv-stream-timescale-frame-display-mode'
+const FRAME_DISPLAY_MODE_STORAGE_KEY = 'cv-stream-timescale-frame-display-mode-v2'
 
 const lockedConfigKeys = new Set([
   'CAPTURE_SOURCE_KIND',
@@ -842,7 +843,9 @@ function FrameConsole({
       : `检测滞后 ${overlayLagFrames} 帧，已隐藏旧框`
     : '等待检测框…'
   const queuedText = `${numberFormatter.format(captureStatus?.detections_queued ?? 0)} queued`
-  const frameModeAction = frameDisplayMode === 'contain' ? '切换为铺满裁切' : '切换为适应比例'
+  const frameModeAction = `画面比例：${frameDisplayModeLabel(frameDisplayMode)}，点击切换`
+  const previewStageStyle = adaptiveFrameStageStyle(frameDisplayMode, frameWidth, frameHeight, false)
+  const viewerStageStyle = adaptiveFrameStageStyle(frameDisplayMode, frameWidth, frameHeight, true)
 
   useEffect(() => {
     if (!previewActive) {
@@ -931,7 +934,7 @@ function FrameConsole({
 
   function toggleFrameDisplayMode() {
     setFrameDisplayMode((current) => {
-      const next = current === 'contain' ? 'cover' : 'contain'
+      const next = nextFrameDisplayMode(current)
       setFrameDisplayModePreference(next)
       return next
     })
@@ -948,12 +951,13 @@ function FrameConsole({
           <div className="frame-toolbar-actions">
             <button
               type="button"
-              className="icon-button"
+              className={`icon-button frame-mode-button frame-mode-button-${frameDisplayMode}`}
               title={frameModeAction}
               aria-label={frameModeAction}
+              aria-pressed={frameDisplayMode === 'adaptive'}
               onClick={toggleFrameDisplayMode}
             >
-              <ScanLine size={17} aria-hidden="true" />
+              {frameDisplayModeIcon(frameDisplayMode)}
             </button>
             <button
               type="button"
@@ -994,6 +998,7 @@ function FrameConsole({
           model={model}
           overlayStatus={overlayStatus}
           queuedText={queuedText}
+          style={previewStageStyle}
         />
       </section>
 
@@ -1035,6 +1040,7 @@ function FrameConsole({
               model={model}
               overlayStatus={overlayStatus}
               queuedText={queuedText}
+              style={viewerStageStyle}
             />
           </div>
         </div>
@@ -1056,6 +1062,7 @@ function FrameStage({
   frameWidth,
   model,
   overlayStatus,
+  style,
   queuedText,
 }: {
   ariaLabel: string
@@ -1070,6 +1077,7 @@ function FrameStage({
   frameWidth: number
   model: string
   overlayStatus: string
+  style?: CSSProperties
   queuedText: string
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -1118,7 +1126,7 @@ function FrameStage({
   }, [])
 
   return (
-    <div className={stageClassName} aria-label={ariaLabel} ref={stageRef}>
+    <div className={stageClassName} aria-label={ariaLabel} ref={stageRef} style={style}>
       {framePreviewUrl && (
         <img
           alt=""
@@ -2247,15 +2255,82 @@ function isApiTokenRequiredError(error: unknown): boolean {
 
 function getFrameDisplayMode(): FrameDisplayMode {
   if (typeof window === 'undefined') {
-    return 'contain'
+    return 'adaptive'
   }
 
-  return window.localStorage.getItem(FRAME_DISPLAY_MODE_STORAGE_KEY) === 'cover' ? 'cover' : 'contain'
+  const value = window.localStorage.getItem(FRAME_DISPLAY_MODE_STORAGE_KEY)
+  return isFrameDisplayMode(value) ? value : 'adaptive'
 }
 
 function setFrameDisplayModePreference(value: FrameDisplayMode) {
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(FRAME_DISPLAY_MODE_STORAGE_KEY, value)
+  }
+}
+
+function isFrameDisplayMode(value: string | null): value is FrameDisplayMode {
+  return value === 'contain' || value === 'cover' || value === 'adaptive'
+}
+
+function nextFrameDisplayMode(current: FrameDisplayMode): FrameDisplayMode {
+  if (current === 'adaptive') {
+    return 'contain'
+  }
+  if (current === 'contain') {
+    return 'cover'
+  }
+  return 'adaptive'
+}
+
+function frameDisplayModeLabel(mode: FrameDisplayMode): string {
+  if (mode === 'adaptive') {
+    return '自适应填满'
+  }
+  if (mode === 'cover') {
+    return '铺满裁切'
+  }
+  return '完整比例'
+}
+
+function frameDisplayModeIcon(mode: FrameDisplayMode) {
+  if (mode === 'adaptive') {
+    return <Focus size={17} aria-hidden="true" />
+  }
+  if (mode === 'cover') {
+    return <ScanLine size={17} aria-hidden="true" />
+  }
+  return <ArrowDownUp size={17} aria-hidden="true" />
+}
+
+function adaptiveFrameStageStyle(
+  mode: FrameDisplayMode,
+  frameWidth: number,
+  frameHeight: number,
+  expanded: boolean,
+): CSSProperties | undefined {
+  if (mode !== 'adaptive' || frameWidth <= 0 || frameHeight <= 0) {
+    return undefined
+  }
+
+  const aspect = frameWidth / frameHeight
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    return undefined
+  }
+
+  const targetHeight = expanded
+    ? aspect < 1
+      ? 760
+      : 680
+    : aspect < 1
+      ? 720
+      : 560
+  const minWidth = expanded ? 520 : 480
+  const maxWidth = expanded ? 980 : 1180
+  const width = Math.round(clampNumber(aspect * targetHeight, minWidth, maxWidth))
+
+  return {
+    aspectRatio: `${frameWidth} / ${frameHeight}`,
+    width: `min(100%, ${width}px)`,
   }
 }
 
@@ -2384,30 +2459,32 @@ function detectionBoxStyle(
   }
 
   const normalized = x2 <= 1 && y2 <= 1
-  const widthBase = normalized ? 1 : frameWidth
-  const heightBase = normalized ? 1 : frameHeight
-  if (widthBase <= 0 || heightBase <= 0) {
+  const coordinateWidthBase = normalized ? 1 : frameWidth
+  const coordinateHeightBase = normalized ? 1 : frameHeight
+  const imageWidthBase = frameWidth > 0 ? frameWidth : coordinateWidthBase
+  const imageHeightBase = frameHeight > 0 ? frameHeight : coordinateHeightBase
+  if (coordinateWidthBase <= 0 || coordinateHeightBase <= 0 || imageWidthBase <= 0 || imageHeightBase <= 0) {
     return undefined
   }
   if (stageSize.width <= 0 || stageSize.height <= 0) {
     return undefined
   }
 
-  const left = clampNumber(Math.min(x1, x2) / widthBase, 0, 1)
-  const top = clampNumber(Math.min(y1, y2) / heightBase, 0, 1)
-  const right = clampNumber(Math.max(x1, x2) / widthBase, 0, 1)
-  const bottom = clampNumber(Math.max(y1, y2) / heightBase, 0, 1)
+  const left = clampNumber(Math.min(x1, x2) / coordinateWidthBase, 0, 1)
+  const top = clampNumber(Math.min(y1, y2) / coordinateHeightBase, 0, 1)
+  const right = clampNumber(Math.max(x1, x2) / coordinateWidthBase, 0, 1)
+  const bottom = clampNumber(Math.max(y1, y2) / coordinateHeightBase, 0, 1)
   const width = right - left
   const height = bottom - top
   if (width <= 0.005 || height <= 0.005) {
     return undefined
   }
 
-  const scale = displayMode === 'cover'
-    ? Math.max(stageSize.width / widthBase, stageSize.height / heightBase)
-    : Math.min(stageSize.width / widthBase, stageSize.height / heightBase)
-  const imageWidth = widthBase * scale
-  const imageHeight = heightBase * scale
+  const scale = frameImageFitMode(displayMode, imageWidthBase, imageHeightBase, stageSize) === 'cover'
+    ? Math.max(stageSize.width / imageWidthBase, stageSize.height / imageHeightBase)
+    : Math.min(stageSize.width / imageWidthBase, stageSize.height / imageHeightBase)
+  const imageWidth = imageWidthBase * scale
+  const imageHeight = imageHeightBase * scale
   const offsetX = (stageSize.width - imageWidth) / 2
   const offsetY = (stageSize.height - imageHeight) / 2
 
@@ -2417,6 +2494,18 @@ function detectionBoxStyle(
     width: `${width * imageWidth}px`,
     height: `${height * imageHeight}px`,
   }
+}
+
+function frameImageFitMode(
+  displayMode: FrameDisplayMode,
+  frameWidth: number,
+  frameHeight: number,
+  stageSize: { width: number; height: number },
+): 'contain' | 'cover' {
+  if (displayMode === 'adaptive') {
+    return frameWidth > 0 && frameHeight > 0 && stageSize.width > 0 && stageSize.height > 0 ? 'cover' : 'contain'
+  }
+  return displayMode
 }
 
 function numberOrNull(value: unknown): number | null {

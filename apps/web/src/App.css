@@ -206,7 +206,8 @@ h3 {
 
 .video-stage {
   position: relative;
-  min-height: 330px;
+  aspect-ratio: 16 / 7;
+  min-height: clamp(380px, 38vw, 620px);
   overflow: hidden;
   border-radius: 8px;
   border: 1px solid #142642;
@@ -231,6 +232,26 @@ h3 {
 
 .frame-mode-cover .video-frame {
   object-fit: cover;
+}
+
+.frame-mode-adaptive .video-frame {
+  object-fit: cover;
+}
+
+.video-stage.frame-mode-adaptive {
+  margin-inline: auto;
+}
+
+.frame-mode-button-adaptive {
+  color: var(--green);
+  background: var(--green-bg);
+  border-color: #9fdcc7;
+}
+
+.frame-mode-button-cover {
+  color: var(--amber);
+  background: var(--amber-bg);
+  border-color: #edc979;
 }
 
 .scan-grid {
@@ -418,6 +439,13 @@ h3 {
   min-height: 0;
   border-color: rgba(219, 233, 255, 0.28);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+}
+
+.frame-lightbox-stage.frame-mode-adaptive {
+  align-self: center;
+  justify-self: center;
+  height: auto;
+  max-height: 100%;
 }
 
 .pipeline-map {
@@ -1378,7 +1406,8 @@ h3 {
   }
 
   .video-stage {
-    min-height: 260px;
+    aspect-ratio: 4 / 5;
+    min-height: 360px;
   }
 
   .frame-toolbar {
