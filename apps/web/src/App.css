@@ -620,6 +620,84 @@ h3 {
   align-items: start;
 }
 
+.config-section-nav {
+  display: grid;
+  grid-template-columns: minmax(128px, 0.22fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-top: 4px solid #1c2d49;
+}
+
+.config-section-current {
+  min-width: 0;
+}
+
+.config-section-current h2 {
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.config-section-tabs {
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 4px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: #adc2df transparent;
+}
+
+.config-section-tabs::-webkit-scrollbar {
+  height: 8px;
+}
+
+.config-section-tabs::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #adc2df;
+}
+
+.config-section-tabs button {
+  flex: 0 0 auto;
+  min-width: 92px;
+  min-height: 42px;
+  justify-content: center;
+  border-color: #c7d5ea;
+  background: #ffffff;
+  scroll-snap-align: start;
+}
+
+.config-section-tabs button.active {
+  color: #ffffff;
+  border-color: #1c2d49;
+  background: #1c2d49;
+  box-shadow: 0 10px 22px rgba(28, 45, 73, 0.18);
+}
+
+.config-section-tabs button.active svg {
+  color: #ffffff;
+}
+
+.config-section-index {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--blue);
+  background: var(--blue-bg);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.config-section-tabs button.active .config-section-index {
+  color: #1c2d49;
+  background: #ffffff;
+}
+
 .access-panel {
   position: relative;
   overflow: hidden;
@@ -1170,11 +1248,16 @@ h3 {
   .signal-grid,
   .config-grid,
   .config-layout,
+  .config-section-nav,
   .video-access-grid,
   .video-mode-shell,
   .remote-action-grid,
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .config-section-tabs {
+    justify-content: flex-start;
   }
 
   .config-toolbar {
@@ -1210,6 +1293,7 @@ h3 {
   .auth-prompt-controls,
   .config-grid,
   .config-layout,
+  .config-section-nav,
   .field-grid,
   .video-access-grid,
   .video-mode-shell,

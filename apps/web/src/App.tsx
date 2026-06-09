@@ -119,6 +119,7 @@ type ConfigGroup = {
 
 type ConfigDraft = Record<string, string>
 type ConfigInputMode = 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url'
+type ConfigSectionKey = 'access' | 'video' | 'inference' | 'storage' | 'observability' | 'remote'
 
 const lockedConfigKeys = new Set([
   'CAPTURE_SOURCE_KIND',
@@ -369,6 +370,20 @@ const workflowConfigGroups: ConfigGroup[] = [
 ]
 
 const configGroups = [accessConfigGroup, videoAccessConfigGroup, ...workflowConfigGroups]
+
+const configSectionTabs: Array<{
+  key: ConfigSectionKey
+  label: string
+  eyebrow: string
+  icon: typeof Activity
+}> = [
+  { key: 'access', label: '鉴权', eyebrow: 'Access', icon: ShieldCheck },
+  { key: 'video', label: '视频', eyebrow: 'Video', icon: Video },
+  { key: 'inference', label: '推理', eyebrow: 'Infer', icon: Cpu },
+  { key: 'storage', label: '存储', eyebrow: 'Store', icon: HardDrive },
+  { key: 'observability', label: '观测', eyebrow: 'Watch', icon: Gauge },
+  { key: 'remote', label: '远端', eyebrow: 'Remote', icon: Server },
+]
 
 const tabKeys = new Set<TabKey>(tabs.map((tab) => tab.key))
 const confidenceFormatter = new Intl.NumberFormat('zh-CN', {
@@ -1026,6 +1041,7 @@ function ConfigPage({
   const [dirty, setDirty] = useState(false)
   const [remoteDbPassword, setRemoteDbPassword] = useState('')
   const [revealedFields, setRevealedFields] = useState<Set<string>>(() => new Set())
+  const [activeConfigSection, setActiveConfigSection] = useState<ConfigSectionKey>('access')
   const visibleDraft = dirty ? draft : currentDraft
   const serverTokenConfigured = Boolean((visibleDraft.API_AUTH_TOKEN ?? '').trim())
   const accessMessage = serverTokenConfigured
@@ -1110,9 +1126,34 @@ function ConfigPage({
   const configProbeChecks = configProbeResult?.checks ?? []
   const remoteConfig = pickObject(config, 'remote')
   const sshConfigured = Boolean(remoteConfig.ssh_configured)
+  const activeConfigTab =
+    configSectionTabs.find((tab) => tab.key === activeConfigSection) ?? configSectionTabs[0]
 
-  return (
-    <section className="config-layout config-editable">
+  function renderWorkflowGroup(group: ConfigGroup, full = true) {
+    const Icon = group.icon
+
+    return (
+      <div className={`panel config-card ${group.accent} ${full ? 'full-config' : ''}`} key={group.title}>
+        <PanelHeading eyebrow={group.eyebrow} title={group.title} icon={Icon} />
+        <div className="field-grid">
+          {group.fields.map((field) => renderConfigField(field))}
+        </div>
+        {group.title === '推理配置' && (
+          <div className={`notice ${inferenceStatus?.status ?? 'warn'}`}>
+            {inferenceStatus?.message ?? '推理状态检测中…'}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  function renderWorkflowGroupByTitle(title: string, full = true) {
+    const group = workflowConfigGroups.find((item) => item.title === title)
+    return group ? renderWorkflowGroup(group, full) : null
+  }
+
+  function renderAccessPanel() {
+    return (
       <div className="panel access-panel full-config">
         <PanelHeading eyebrow={accessConfigGroup.eyebrow} title={accessConfigGroup.title} icon={ShieldCheck} />
 
@@ -1132,76 +1173,11 @@ function ConfigPage({
           </div>
         </div>
       </div>
+    )
+  }
 
-      <VideoAccessPanel
-        mode={visibleDraft.STREAM_MODE === 'push' ? 'push' : 'pull'}
-        probePending={probePending}
-        probeResult={probeResult}
-        supportedPushProtocols={videoConfig?.supported_push_protocols ?? ['rtsp', 'rtmp']}
-        renderConfigField={renderConfigField}
-        onProbe={onProbe}
-      />
-
-      {workflowConfigGroups.map((group) => {
-        const Icon = group.icon
-        return (
-          <div className={`panel config-card ${group.accent}`} key={group.title}>
-            <PanelHeading eyebrow={group.eyebrow} title={group.title} icon={Icon} />
-            <div className="field-grid">
-              {group.fields.map((field) => renderConfigField(field))}
-            </div>
-            {group.title === '推理配置' && (
-              <div className={`notice ${inferenceStatus?.status ?? 'warn'}`}>
-                {inferenceStatus?.message ?? '推理状态检测中…'}
-              </div>
-            )}
-          </div>
-        )
-      })}
-
-      <div className="panel config-toolbar full-config">
-        <div>
-          <p className="eyebrow">Apply</p>
-          <h2>{dirty ? '有未保存配置' : '配置已同步'}</h2>
-        </div>
-        <div className="action-row">
-          <button
-            type="button"
-            onClick={() => onProbeConfig(collectProbeValues(visibleDraft))}
-            disabled={configProbePending || !config}
-          >
-            <ShieldCheck size={17} aria-hidden="true" />
-            检测当前配置
-          </button>
-          <button type="button" onClick={saveConfig} disabled={savePending || !dirty}>
-            <Save size={17} aria-hidden="true" />
-            保存并热重载
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setDraft({})
-              setDirty(false)
-            }}
-            disabled={!dirty || savePending}
-          >
-            <RotateCw size={17} aria-hidden="true" />
-            还原
-          </button>
-          {saveMessage && <span className={`action-result ${saveError ? 'error' : ''}`} aria-live="polite">{saveMessage}</span>}
-          {configProbeMessage && <span className={`action-result ${configProbeError ? 'error' : ''}`} aria-live="polite">{configProbeMessage}</span>}
-        </div>
-        {configProbeChecks.length > 0 && (
-          <div className="probe-strip" aria-label="当前配置检测结果">
-            {configProbeChecks.map((check) => (
-              <span className={`mini-status ${check.status}`} key={check.name}>
-                {check.name}: {check.status}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
+  function renderRemoteOpsPanel() {
+    return (
       <div className="panel config-card accent-remote remote-panel full-config">
         <PanelHeading eyebrow="Remote Ops" title="远端与数据库管理" icon={Server} />
         <div className={`notice ${sshConfigured ? 'ok' : 'warn'}`}>
@@ -1250,6 +1226,121 @@ function ConfigPage({
           })}
         </div>
         <pre className="terminal-output" aria-live="polite">{remoteOutput || '等待远端操作…'}</pre>
+      </div>
+    )
+  }
+
+  function renderActiveConfigSection() {
+    switch (activeConfigSection) {
+      case 'access':
+        return renderAccessPanel()
+      case 'video':
+        return (
+          <VideoAccessPanel
+            mode={visibleDraft.STREAM_MODE === 'push' ? 'push' : 'pull'}
+            probePending={probePending}
+            probeResult={probeResult}
+            supportedPushProtocols={videoConfig?.supported_push_protocols ?? ['rtsp', 'rtmp']}
+            renderConfigField={renderConfigField}
+            onProbe={onProbe}
+          />
+        )
+      case 'inference':
+        return renderWorkflowGroupByTitle('推理配置')
+      case 'storage':
+        return renderWorkflowGroupByTitle('数据库与缓存')
+      case 'observability':
+        return (
+          <>
+            {renderWorkflowGroupByTitle('分析视图', false)}
+            {renderWorkflowGroupByTitle('可观测性', false)}
+          </>
+        )
+      case 'remote':
+        return (
+          <>
+            {renderWorkflowGroupByTitle('远端管理')}
+            {renderRemoteOpsPanel()}
+          </>
+        )
+      default:
+        return renderAccessPanel()
+    }
+  }
+
+  return (
+    <section className="config-layout config-editable">
+      <div className="panel config-section-nav full-config">
+        <div className="config-section-current">
+          <p className="eyebrow">{activeConfigTab.eyebrow}</p>
+          <h2>{activeConfigTab.label}配置</h2>
+        </div>
+        <div className="config-section-tabs" role="tablist" aria-label="配置分页">
+          {configSectionTabs.map((tab, index) => {
+            const Icon = tab.icon
+            const active = tab.key === activeConfigSection
+
+            return (
+              <button
+                aria-selected={active}
+                className={active ? 'active' : ''}
+                key={tab.key}
+                role="tab"
+                type="button"
+                onClick={() => setActiveConfigSection(tab.key)}
+              >
+                <span className="config-section-index">{index + 1}</span>
+                <Icon size={16} aria-hidden="true" />
+                <span>{tab.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {renderActiveConfigSection()}
+
+      <div className="panel config-toolbar full-config">
+        <div>
+          <p className="eyebrow">Apply</p>
+          <h2>{dirty ? '有未保存配置' : '配置已同步'}</h2>
+        </div>
+        <div className="action-row">
+          <button
+            type="button"
+            onClick={() => onProbeConfig(collectProbeValues(visibleDraft))}
+            disabled={configProbePending || !config}
+          >
+            <ShieldCheck size={17} aria-hidden="true" />
+            检测当前配置
+          </button>
+          <button type="button" onClick={saveConfig} disabled={savePending || !dirty}>
+            <Save size={17} aria-hidden="true" />
+            保存并热重载
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDraft({})
+              setDirty(false)
+            }}
+            disabled={!dirty || savePending}
+          >
+            <RotateCw size={17} aria-hidden="true" />
+            还原
+          </button>
+          {saveMessage && <span className={`action-result ${saveError ? 'error' : ''}`} aria-live="polite">{saveMessage}</span>}
+          {configProbeMessage && <span className={`action-result ${configProbeError ? 'error' : ''}`} aria-live="polite">{configProbeMessage}</span>}
+        </div>
+        {configProbeChecks.length > 0 && (
+          <div className="probe-strip" aria-label="当前配置检测结果">
+            {configProbeChecks.map((check) => (
+              <span className={`mini-status ${check.status}`} key={check.name}>
+                {check.name}: {check.status}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   )
