@@ -8,7 +8,6 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  Filter,
   Focus,
   Gauge,
   HardDrive,
@@ -25,6 +24,7 @@ import {
   ShieldCheck,
   Square,
   Terminal,
+  Trash2,
   Video,
   Wrench,
   X,
@@ -43,6 +43,7 @@ import {
   type EnvironmentResponse,
   type InferenceStatus,
   type LogLevel,
+  type WriteRunInputMode,
   type RemoteAction,
   type SpoolStatus,
   type UiLogEvent,
@@ -61,6 +62,8 @@ import {
   flushSpool,
   getApiAuthToken,
   getApiBaseUrl,
+  clearLogEvents,
+  clearRuntimeData,
   probeEnvironment,
   probeVideo,
   reloadConfig,
@@ -128,6 +131,15 @@ const logLevelOptions: Array<{ value: 'all' | LogLevel; label: string }> = [
   { value: 'ok', label: 'ok' },
   { value: 'warn', label: 'warn' },
   { value: 'error', label: 'error' },
+]
+
+type LogPaneKey = 'runtime' | 'write' | 'analysis' | 'maintenance'
+
+const logPanes: Array<{ key: LogPaneKey; label: string; icon: typeof Activity }> = [
+  { key: 'runtime', label: '运行日志', icon: Terminal },
+  { key: 'write', label: '写入流程', icon: Play },
+  { key: 'analysis', label: '时序查询', icon: Database },
+  { key: 'maintenance', label: '数据维护', icon: Trash2 },
 ]
 
 type ConfigField = {
@@ -1970,6 +1982,7 @@ function LogsPage({
   captureStatus?: CaptureStatus
 }) {
   const queryClient = useQueryClient()
+  const [activePane, setActivePane] = useState<LogPaneKey>('runtime')
   const [sourceFilter, setSourceFilter] = useState('all')
   const [levelFilter, setLevelFilter] = useState('all')
   const [keyword, setKeyword] = useState('')
@@ -1977,6 +1990,9 @@ function LogsPage({
   const [newestFirst, setNewestFirst] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
   const [maxFramesDraft, setMaxFramesDraft] = useState('120')
+  const [clearSpool, setClearSpool] = useState(true)
+  const [clearTimescale, setClearTimescale] = useState(false)
+  const [clearConfirm, setClearConfirm] = useState('')
   const logEndRef = useRef<HTMLDivElement | null>(null)
   const runningCapture = captureStatus?.status === 'running' || captureStatus?.status === 'stopping'
 
@@ -2004,7 +2020,11 @@ function LogsPage({
   })
 
   const startRun = useMutation({
-    mutationFn: () => startWriteRun({ max_frames: boundedInteger(maxFramesDraft, 120, 1, 10_000) }),
+    mutationFn: (inputMode: WriteRunInputMode) =>
+      startWriteRun({
+        input_mode: inputMode,
+        max_frames: boundedInteger(maxFramesDraft, 120, 1, 10_000),
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries()
     },
@@ -2024,6 +2044,25 @@ function LogsPage({
     },
   })
 
+  const clearLogs = useMutation({
+    mutationFn: clearLogEvents,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['ui-log-events'] })
+    },
+  })
+
+  const clearData = useMutation({
+    mutationFn: () =>
+      clearRuntimeData({
+        clear_spool: clearSpool,
+        clear_timescale: clearTimescale,
+        confirm: clearConfirm,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries()
+    },
+  })
+
   const events = logEvents.data?.events ?? []
   const visibleEvents = newestFirst ? [...events].reverse() : events
   const currentRun = writeRun.data?.run
@@ -2031,6 +2070,21 @@ function LogsPage({
   const analysisResult = runQueries.data
   const queryCards = analysisResult?.results ?? []
   const availableQueries = analysisQueries.data?.queries ?? analysisResult?.queries ?? []
+  const canClearData = clearSpool || clearTimescale
+  const timescaleConfirmNeeded = clearTimescale && clearConfirm !== 'CLEAR_DATA'
+  const actionMessage = String(
+    startRun.error?.message
+      ?? stopRun.error?.message
+      ?? runQueries.error?.message
+      ?? clearLogs.error?.message
+      ?? clearData.error?.message
+      ?? startRun.data?.message
+      ?? stopRun.data?.message
+      ?? analysisResult?.message
+      ?? clearLogs.data?.message
+      ?? clearData.data?.message
+      ?? '',
+  )
 
   useEffect(() => {
     if (autoScroll && !newestFirst) {
@@ -2039,129 +2093,210 @@ function LogsPage({
   }, [autoScroll, newestFirst, events.length])
 
   return (
-    <section className="logs-workspace">
-      <div className="panel logs-control-panel">
-        <PanelHeading eyebrow="Capture Write" title="采集写入流程" icon={Terminal} />
-        <div className="metric-grid">
-          <Metric label="流程状态" value={currentRun?.status ?? 'idle'} />
-          <Metric label="采集状态" value={captureStatus?.status ?? 'idle'} />
-          <Metric label="读取帧" value={captureStatus?.frames_read ?? 0} />
-          <Metric label="入队检测" value={captureStatus?.detections_queued ?? 0} />
-        </div>
-        <div className="log-run-controls">
-          <label className="compact-input">
-            <span>帧数</span>
-            <input
-              inputMode="numeric"
-              min={1}
-              max={10000}
-              type="number"
-              value={maxFramesDraft}
-              onChange={(event) => setMaxFramesDraft(event.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => startRun.mutate()}
-            disabled={startRun.isPending || runActive || runningCapture}
-          >
-            <Play size={17} aria-hidden="true" />
-            运行采集写入
-          </button>
-          <button
-            type="button"
-            onClick={() => stopRun.mutate()}
-            disabled={stopRun.isPending || !runActive}
-          >
-            <Square size={17} aria-hidden="true" />
-            停止流程
-          </button>
-          {(startRun.data || stopRun.data || startRun.error || stopRun.error) && (
-            <span className={`action-result ${startRun.error || stopRun.error ? 'error' : ''}`}>
-              {String(startRun.error?.message ?? stopRun.error?.message ?? startRun.data?.message ?? stopRun.data?.message ?? '')}
-            </span>
-          )}
-        </div>
-      </div>
+    <section className="logs-workspace terminal-first-workspace">
+      <div className="log-console-shell">
+        <header className="log-console-header">
+          <div>
+            <span className="console-kicker">cv-stream console</span>
+            <h2>运行终端</h2>
+          </div>
+          <div className="console-situation" aria-label="情况日志">
+            <span>capture:{captureStatus?.status ?? 'idle'}</span>
+            <span>run:{currentRun?.status ?? 'idle'}</span>
+            <span>frames:{numberFormatter.format(captureStatus?.frames_read ?? 0)}</span>
+            <span>queued:{numberFormatter.format(captureStatus?.detections_queued ?? 0)}</span>
+          </div>
+        </header>
 
-      <aside className="panel logs-query-panel">
-        <PanelHeading eyebrow="Timescale SQL" title="时序分析查询" icon={BarChart3} compact />
-        <div className="metric-grid analysis-settings">
-          <Metric label="内置查询" value={availableQueries.length} />
-          <Metric label="执行状态" value={analysisResult?.status ?? 'ready'} />
+        <div className="log-console-tabs" role="tablist" aria-label="日志视图">
+          {logPanes.map((pane) => {
+            const Icon = pane.icon
+            return (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activePane === pane.key}
+                className={activePane === pane.key ? 'active' : ''}
+                key={pane.key}
+                onClick={() => setActivePane(pane.key)}
+              >
+                <Icon size={17} aria-hidden="true" />
+                {pane.label}
+              </button>
+            )
+          })}
         </div>
-        <button
-          type="button"
-          onClick={() => runQueries.mutate()}
-          disabled={runQueries.isPending}
-        >
-          <Database size={17} aria-hidden="true" />
-          执行时序分析
-        </button>
-        {(analysisResult || runQueries.error) && (
-          <div className={`notice ${runQueries.error || analysisResult?.status === 'error' ? 'error' : 'ok'}`}>
-            {String(runQueries.error?.message ?? analysisResult?.message ?? '时序分析查询完成')}
+
+        {activePane === 'runtime' && (
+          <div className="terminal-command-row">
+            <label>
+              <span>source</span>
+              <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+                {logSourceOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>level</span>
+              <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
+                {logLevelOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="terminal-search-field">
+              <span>grep</span>
+              <input
+                inputMode="search"
+                type="search"
+                value={keyword}
+                placeholder="event / message / status"
+                onChange={(event) => setKeyword(event.target.value)}
+              />
+            </label>
+            <label className="terminal-check">
+              <input
+                type="checkbox"
+                checked={errorOnly}
+                onChange={(event) => setErrorOnly(event.target.checked)}
+              />
+              errors
+            </label>
+            <label className="terminal-check">
+              <input
+                type="checkbox"
+                checked={autoScroll}
+                onChange={(event) => setAutoScroll(event.target.checked)}
+              />
+              tail
+            </label>
+            <button type="button" onClick={() => setNewestFirst((current) => !current)}>
+              <ArrowDownUp size={16} aria-hidden="true" />
+              {newestFirst ? 'newest' : 'oldest'}
+            </button>
           </div>
         )}
-      </aside>
 
-      <div className="panel log-filter-panel full-span">
-        <PanelHeading eyebrow="Filter" title="运行日志过滤" icon={Filter} compact />
-        <div className="log-filter-grid">
-          <label>
-            <span>来源</span>
-            <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-              {logSourceOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>级别</span>
-            <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
-              {logLevelOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="log-search-field">
-            <span>关键词</span>
-            <input
-              inputMode="search"
-              type="search"
-              value={keyword}
-              placeholder="事件、消息、类别、状态…"
-              onChange={(event) => setKeyword(event.target.value)}
-            />
-          </label>
-          <label className="toggle-control">
-            <input
-              type="checkbox"
-              checked={errorOnly}
-              onChange={(event) => setErrorOnly(event.target.checked)}
-            />
-            只看错误
-          </label>
-          <label className="toggle-control">
-            <input
-              type="checkbox"
-              checked={autoScroll}
-              onChange={(event) => setAutoScroll(event.target.checked)}
-            />
-            自动滚动
-          </label>
-          <button type="button" onClick={() => setNewestFirst((current) => !current)}>
-            <ArrowDownUp size={17} aria-hidden="true" />
-            {newestFirst ? '最新在前' : '最早在前'}
-          </button>
-        </div>
-      </div>
+        {activePane === 'write' && (
+          <div className="terminal-command-row">
+            <label>
+              <span>frames</span>
+              <input
+                inputMode="numeric"
+                min={1}
+                max={10000}
+                type="number"
+                value={maxFramesDraft}
+                onChange={(event) => setMaxFramesDraft(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => startRun.mutate('live')}
+              disabled={startRun.isPending || runActive || runningCapture}
+            >
+              <Video size={16} aria-hidden="true" />
+              实时视频写入
+            </button>
+            <button
+              type="button"
+              onClick={() => startRun.mutate('sample')}
+              disabled={startRun.isPending || runActive}
+            >
+              <Play size={16} aria-hidden="true" />
+              样例输入写入
+            </button>
+            <button
+              type="button"
+              onClick={() => stopRun.mutate()}
+              disabled={stopRun.isPending || !runActive}
+            >
+              <Square size={16} aria-hidden="true" />
+              stop
+            </button>
+          </div>
+        )}
 
-      <div className="panel terminal-log-panel full-span">
-        <PanelHeading eyebrow="Runtime Log" title="运行日志" icon={Terminal} compact />
+        {activePane === 'analysis' && (
+          <div className="terminal-command-row">
+            <button
+              type="button"
+              onClick={() => runQueries.mutate()}
+              disabled={runQueries.isPending}
+            >
+              <Database size={16} aria-hidden="true" />
+              执行内置查询
+            </button>
+            <button
+              type="button"
+              onClick={() => startRun.mutate('sample')}
+              disabled={startRun.isPending || runActive}
+            >
+              <Play size={16} aria-hidden="true" />
+              先写入样例输入
+            </button>
+            <span className="terminal-inline-stat">{availableQueries.length} queries</span>
+            <span className={`mini-status ${analysisResult?.status === 'error' ? 'error' : 'info'}`}>
+              {analysisResult?.status ?? 'ready'}
+            </span>
+          </div>
+        )}
+
+        {activePane === 'maintenance' && (
+          <div className="terminal-command-row maintenance-row">
+            <button
+              type="button"
+              onClick={() => clearLogs.mutate()}
+              disabled={clearLogs.isPending}
+            >
+              <Trash2 size={16} aria-hidden="true" />
+              清空日志
+            </button>
+            <label className="terminal-check">
+              <input
+                type="checkbox"
+                checked={clearSpool}
+                onChange={(event) => setClearSpool(event.target.checked)}
+              />
+              SQLite spool
+            </label>
+            <label className="terminal-check">
+              <input
+                type="checkbox"
+                checked={clearTimescale}
+                onChange={(event) => setClearTimescale(event.target.checked)}
+              />
+              Timescale records
+            </label>
+            <label className="terminal-search-field">
+              <span>confirm</span>
+              <input
+                value={clearConfirm}
+                placeholder="CLEAR_DATA"
+                onChange={(event) => setClearConfirm(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => clearData.mutate()}
+              disabled={clearData.isPending || !canClearData || timescaleConfirmNeeded}
+            >
+              <HardDrive size={16} aria-hidden="true" />
+              清空数据
+            </button>
+          </div>
+        )}
+
+        {actionMessage && (
+          <div className={`console-action-message ${startRun.error || stopRun.error || runQueries.error || clearLogs.error || clearData.error || analysisResult?.status === 'error' || clearData.data?.status === 'error' ? 'error' : 'ok'}`}>
+            {actionMessage}
+          </div>
+        )}
+
         <div className="terminal-log" aria-live="polite">
           {logEvents.isError && <div className="terminal-empty">{logEvents.error.message}</div>}
-          {!logEvents.isError && !visibleEvents.length && <div className="terminal-empty">等待运行日志…</div>}
+          {!logEvents.isError && !visibleEvents.length && <div className="terminal-empty">waiting for events...</div>}
           {visibleEvents.map((event) => (
             <LogEventRow event={event} key={event.id} />
           ))}
@@ -2169,29 +2304,34 @@ function LogsPage({
         </div>
       </div>
 
-      <div className="panel full-span">
-        <PanelHeading eyebrow="SQL Results" title="查询语句与结果" icon={Database} compact />
-        {!queryCards.length && (
-          <div className="query-preview-list">
-            {availableQueries.map((query) => (
-              <article className="query-result-card" key={query.id}>
-                <div className="query-result-head">
-                  <strong>S{19 + query.id} · {query.title}</strong>
-                  <span className="mini-status warn">待执行</span>
-                </div>
-                <pre className="sql-code">{query.sql}</pre>
-              </article>
-            ))}
+      {activePane === 'analysis' && (
+        <div className="analysis-console-results">
+          <div className="analysis-console-head">
+            <span>SQL / result capture</span>
+            <strong>{queryCards.length ? `${queryCards.length} results` : `${availableQueries.length} queries`}</strong>
           </div>
-        )}
-        {queryCards.length > 0 && (
-          <div className="query-preview-list">
-            {queryCards.map((result) => (
-              <SqlResultCard key={result.id} result={result} />
-            ))}
-          </div>
-        )}
-      </div>
+          {!queryCards.length && (
+            <div className="query-preview-list">
+              {availableQueries.map((query) => (
+                <article className="query-result-card" key={query.id}>
+                  <div className="query-result-head">
+                    <strong>S{19 + query.id} · {query.title}</strong>
+                    <span className="mini-status warn">待执行</span>
+                  </div>
+                  <pre className="sql-code">{query.sql}</pre>
+                </article>
+              ))}
+            </div>
+          )}
+          {queryCards.length > 0 && (
+            <div className="query-preview-list">
+              {queryCards.map((result) => (
+                <SqlResultCard key={result.id} result={result} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   )
 }
@@ -2201,13 +2341,15 @@ function LogEventRow({ event }: { event: UiLogEvent }) {
     <article className={`log-event-row ${event.level}`}>
       <div className="log-event-meta">
         <span>{formatDateTime(event.time)}</span>
-        <span className={`mini-status ${event.level}`}>{event.level}</span>
-        <span>{event.source}</span>
-        <strong>{event.event}</strong>
+        <span className="terminal-level">[{event.level}]</span>
+        <span>{event.source}:{event.event}</span>
       </div>
       <p>{event.message}</p>
       {Object.keys(event.details ?? {}).length > 0 && (
-        <pre>{formatLogDetails(event.details)}</pre>
+        <details>
+          <summary>payload</summary>
+          <pre>{formatLogDetails(event.details)}</pre>
+        </details>
       )}
     </article>
   )

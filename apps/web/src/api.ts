@@ -133,6 +133,8 @@ export type WriteRunStatus = {
   }
 }
 
+export type WriteRunInputMode = 'live' | 'sample'
+
 export type AnalysisQueryItem = {
   id: number
   title: string
@@ -159,6 +161,12 @@ export type AnalysisRunResponse = {
   queries: AnalysisQueryItem[]
   results: AnalysisQueryResult[]
   error?: string
+}
+
+export type MaintenanceClearResponse = {
+  status: string
+  message: string
+  results?: Array<Record<string, unknown>>
 }
 
 export type ConfigValue = string | number | boolean
@@ -374,6 +382,7 @@ export async function fetchWriteRunStatus(): Promise<WriteRunStatus> {
 }
 
 export async function startWriteRun(values: {
+  input_mode?: WriteRunInputMode
   max_frames: number
   frame_interval?: number
 }): Promise<ActionResponse> {
@@ -386,6 +395,22 @@ export async function startWriteRun(values: {
 
 export async function stopWriteRun(): Promise<ActionResponse> {
   return readJson('/api/logs/write-run/stop', { method: 'POST' })
+}
+
+export async function clearLogEvents(): Promise<ActionResponse> {
+  return readJson('/api/logs/events/clear', { method: 'POST' })
+}
+
+export async function clearRuntimeData(values: {
+  clear_spool: boolean
+  clear_timescale: boolean
+  confirm?: string
+}): Promise<MaintenanceClearResponse> {
+  return readJson('/api/logs/maintenance/clear-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(values),
+  })
 }
 
 export async function fetchAnalysisQueries(): Promise<AnalysisQueriesResponse> {

@@ -25,6 +25,7 @@ from .log_analysis import (
     load_analysis_query_sections,
     run_analysis_query_sections,
 )
+from .maintenance import ClearRuntimeDataRequest, clear_runtime_data
 from .remote_ops import RemoteActionRequest, run_remote_action
 from .spool import DetectionSpool
 from .ui_events import UiEventLog
@@ -252,6 +253,19 @@ async def logs_events(
     }
 
 
+@app.post("/api/logs/events/clear")
+async def clear_logs_events() -> dict:
+    await ui_events.clear()
+    event = await ui_events.append(
+        source="system",
+        level="warn",
+        event="logs_cleared",
+        message="运行日志已清空",
+        details={},
+    )
+    return {"status": "ok", "message": "运行日志已清空", "event": event}
+
+
 @app.post("/api/logs/write-run/start")
 async def start_write_run(request: Optional[WriteRunStartRequest] = None) -> dict:
     return await write_runs.start(request)
@@ -281,6 +295,11 @@ async def analysis_log_queries() -> dict:
 @app.post("/api/logs/analysis/run")
 async def run_analysis_log_queries(request: Optional[AnalysisRunRequest] = None) -> dict:
     return await run_analysis_query_sections(get_settings(), ui_events, request)
+
+
+@app.post("/api/logs/maintenance/clear-data")
+async def clear_logs_runtime_data(request: Optional[ClearRuntimeDataRequest] = None) -> dict:
+    return await clear_runtime_data(get_settings(), spool, ui_events, request)
 
 
 @app.get("/api/capture/status")

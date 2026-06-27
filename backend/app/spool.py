@@ -99,6 +99,29 @@ class DetectionSpool:
             "counts": counts,
         }
 
+    async def clear(self, settings: Settings) -> dict[str, Any]:
+        await self.initialize(settings)
+
+        drained_memory = 0
+        while not self._memory_queue.empty():
+            try:
+                self._memory_queue.get_nowait()
+                drained_memory += 1
+            except asyncio.QueueEmpty:
+                break
+
+        path = self._spool_path(settings)
+        async with aiosqlite.connect(path) as database:
+            cursor = await database.execute("DELETE FROM detection_spool")
+            await database.commit()
+
+        return {
+            "status": "ok",
+            "sqlite_path": str(path),
+            "deleted": max(cursor.rowcount, 0),
+            "memory_queue_cleared": drained_memory,
+        }
+
     async def flush(self, settings: Settings, limit: int | None = None) -> dict[str, Any]:
         await self.initialize(settings)
         await self._drain_memory_queue(settings)

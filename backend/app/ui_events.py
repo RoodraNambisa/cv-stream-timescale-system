@@ -97,6 +97,13 @@ class UiEventLog:
 
         return filtered[-capped_limit:]
 
+    async def clear(self) -> None:
+        await self.initialize()
+        async with self._lock:
+            self._events.clear()
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._path.write_text("", encoding="utf-8")
+
 
 def sanitize_payload(value: Any, key: str = "") -> Any:
     normalized_key = key.casefold()

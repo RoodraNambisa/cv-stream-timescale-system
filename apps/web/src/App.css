@@ -1115,82 +1115,177 @@ h3 {
   gap: 14px;
 }
 
-.logs-control-panel,
-.logs-query-panel,
-.log-filter-panel,
-.terminal-log-panel {
-  display: grid;
-  align-content: start;
-  gap: 14px;
+.terminal-first-workspace {
+  grid-template-columns: 1fr;
 }
 
-.log-run-controls,
-.log-filter-grid {
+.log-console-shell,
+.analysis-console-results {
+  min-width: 0;
+  border-radius: 8px;
+  border: 1px solid #13223b;
+  background: #07111f;
+  box-shadow: 0 18px 45px rgba(7, 17, 31, 0.18);
+}
+
+.log-console-shell {
+  overflow: hidden;
+}
+
+.log-console-header {
   display: flex;
-  align-items: end;
-  gap: 10px;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 18px 12px;
+  border-bottom: 1px solid rgba(219, 233, 255, 0.12);
 }
 
-.compact-input,
-.log-filter-grid label {
-  display: grid;
-  gap: 5px;
-  color: var(--muted);
+.log-console-header h2 {
+  margin: 4px 0 0;
+  color: #eff6ff;
+  font-family: var(--mono);
+  font-size: 20px;
+}
+
+.console-kicker,
+.analysis-console-head span {
+  color: #8ea4c1;
+  font-family: var(--mono);
   font-size: 12px;
   font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
-.compact-input input {
-  width: 112px;
+.console-situation {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #b9c7d9;
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
-.log-filter-grid select,
-.log-filter-grid input,
-.compact-input input {
-  min-height: 38px;
-  border: 1px solid var(--border);
+.console-situation span,
+.terminal-inline-stat {
+  min-height: 28px;
+  border-radius: 6px;
+  border: 1px solid rgba(219, 233, 255, 0.16);
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.log-console-tabs,
+.terminal-command-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(219, 233, 255, 0.1);
+}
+
+.log-console-tabs button,
+.terminal-command-row button {
+  min-height: 36px;
+  border-color: rgba(219, 233, 255, 0.16);
+  color: #dbe9ff;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: none;
+}
+
+.log-console-tabs button.active {
+  color: #08111f;
+  background: #dbe9ff;
+  border-color: #dbe9ff;
+}
+
+.terminal-command-row label {
+  display: grid;
+  gap: 4px;
+  color: #8ea4c1;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.terminal-command-row input,
+.terminal-command-row select {
+  min-height: 36px;
+  border: 1px solid rgba(219, 233, 255, 0.16);
   border-radius: 6px;
   padding: 0 10px;
-  color: var(--text);
-  background: #ffffff;
+  color: #eff6ff;
+  background: #0b1728;
+  font-family: var(--mono);
 }
 
-.log-search-field {
+.terminal-command-row input[type='number'] {
+  width: 116px;
+}
+
+.terminal-search-field {
   flex: 1 1 260px;
 }
 
-.toggle-control {
-  min-height: 38px;
+.terminal-check {
+  min-height: 36px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(219, 233, 255, 0.16);
   border-radius: 6px;
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   gap: 8px;
-  color: var(--text);
-  background: #ffffff;
+  color: #dbe9ff !important;
+  background: rgba(255, 255, 255, 0.045);
+  text-transform: none !important;
 }
 
-.toggle-control input {
-  width: 16px;
-  height: 16px;
+.terminal-check input {
+  width: 15px;
+  height: 15px;
+}
+
+.maintenance-row {
+  align-items: end;
+}
+
+.console-action-message {
+  margin: 12px 18px 0;
+  border-radius: 6px;
+  border: 1px solid rgba(219, 233, 255, 0.12);
+  padding: 9px 11px;
+  color: #dbe9ff;
+  background: rgba(255, 255, 255, 0.055);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.console-action-message.ok {
+  border-color: rgba(15, 159, 119, 0.38);
+}
+
+.console-action-message.error {
+  border-color: rgba(207, 63, 70, 0.48);
+  color: #ffd9dd;
 }
 
 .terminal-log {
   min-height: 360px;
-  max-height: 560px;
+  max-height: 620px;
   overflow: auto;
   display: grid;
   align-content: start;
-  gap: 8px;
-  border-radius: 8px;
-  border: 1px solid #13223b;
-  padding: 12px;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 14px 18px 18px;
   color: #dbe9ff;
-  background:
-    linear-gradient(180deg, rgba(11, 23, 40, 0.94), rgba(7, 15, 27, 0.98)),
-    #07111f;
+  background: #07111f;
   font-family: var(--mono);
 }
 
@@ -1206,30 +1301,31 @@ h3 {
 }
 
 .log-event-row {
-  border-left: 3px solid rgba(219, 233, 255, 0.24);
-  border-radius: 6px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.055);
+  border-left: 0;
+  border-radius: 0;
+  padding: 7px 0;
+  background: transparent;
+  border-bottom: 1px solid rgba(219, 233, 255, 0.06);
 }
 
-.log-event-row.ok {
-  border-left-color: var(--green);
+.log-event-row.ok .terminal-level {
+  color: #72d9b6;
 }
 
-.log-event-row.warn {
-  border-left-color: var(--amber);
+.log-event-row.warn .terminal-level {
+  color: #f0b34e;
 }
 
-.log-event-row.error {
-  border-left-color: var(--red);
+.log-event-row.error .terminal-level {
+  color: #ff8990;
 }
 
 .log-event-row p {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   color: #ffffff;
-  font-family: var(--font);
+  font-family: var(--mono);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .log-event-row pre {
@@ -1249,14 +1345,47 @@ h3 {
 .log-event-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   flex-wrap: wrap;
   color: rgba(219, 233, 255, 0.72);
   font-size: 12px;
+  font-family: var(--mono);
 }
 
 .log-event-meta strong {
   color: #ffffff;
+}
+
+.log-event-row details {
+  margin-top: 5px;
+}
+
+.log-event-row summary {
+  cursor: pointer;
+  color: #8ea4c1;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.analysis-console-results {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: #ffffff;
+  border-color: var(--border);
+}
+
+.analysis-console-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.analysis-console-head strong {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
 }
 
 .query-preview-list {

@@ -290,6 +290,7 @@ async def main() -> None:
     import backend.app.environment as environment_module
     import backend.app.inference as inference_module
     import backend.app.log_analysis as log_analysis_module
+    import backend.app.maintenance as maintenance_module
     import backend.app.main as app_main
     import backend.app.remote_ops as remote_ops_module
 
@@ -297,11 +298,13 @@ async def main() -> None:
     original_environment_connect = environment_module.asyncpg.connect
     original_local_image_inference = inference_module._local_image_inference
     original_log_analysis_connect = log_analysis_module.asyncpg.connect
+    original_maintenance_connect = maintenance_module.asyncpg.connect
     original_remote_actions = remote_ops_module.REMOTE_ACTIONS.copy()
     capture_module.infer_image_bytes = fake_capture_infer
     environment_module.asyncpg.connect = fake_database_connect
     inference_module._local_image_inference = fake_local_image_inference
     log_analysis_module.asyncpg.connect = fake_database_connect
+    maintenance_module.asyncpg.connect = fake_database_connect
     remote_ops_module.REMOTE_ACTIONS["apply_schema"] = (
         [
             "bash",
@@ -502,6 +505,37 @@ async def main() -> None:
             error_events = assert_status(await client.get("/api/logs/events?level=error&limit=20"), 200)
             assert error_events["status"] == "ok", error_events
 
+            sample_start = assert_status(
+                await client.post(
+                    "/api/logs/write-run/start",
+                    json={"input_mode": "sample", "max_frames": 16, "frame_interval": 1, "status_interval": 0.5},
+                ),
+                200,
+            )
+            assert sample_start["status"] == "ok", sample_start
+            for _ in range(30):
+                sample_status = assert_status(await client.get("/api/logs/write-run/status"), 200)
+                if sample_status["run"]["status"] not in {"running", "stopping"}:
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                raise AssertionError(f"sample write run did not finish: {sample_status}")
+            assert sample_status["run"]["last_result"]["status"] in {"ok", "error"}, sample_status
+
+            cleared_logs = assert_status(await client.post("/api/logs/events/clear"), 200)
+            assert cleared_logs["status"] == "ok", cleared_logs
+            events_after_clear = assert_status(await client.get("/api/logs/events?limit=20"), 200)
+            assert [item["event"] for item in events_after_clear["events"]] == ["logs_cleared"], events_after_clear
+
+            cleared_spool = assert_status(
+                await client.post(
+                    "/api/logs/maintenance/clear-data",
+                    json={"clear_spool": True, "clear_timescale": False},
+                ),
+                200,
+            )
+            assert cleared_spool["status"] == "ok", cleared_spool
+
             query_list = assert_status(await client.get("/api/logs/analysis/queries"), 200)
             assert len(query_list["queries"]) >= 3, query_list
             assert "SELECT" in query_list["queries"][0]["sql"], query_list["queries"][0]
@@ -523,6 +557,14 @@ async def main() -> None:
             assert query_run["results"][0]["sql"].strip().startswith("SELECT"), query_run["results"][0]
             assert query_run["results"][0]["columns"], query_run["results"][0]
             assert query_run["results"][0]["rows"], query_run["results"][0]
+            cleared_timescale = assert_status(
+                await client.post(
+                    "/api/logs/maintenance/clear-data",
+                    json={"clear_spool": False, "clear_timescale": True, "confirm": "CLEAR_DATA"},
+                ),
+                200,
+            )
+            assert cleared_timescale["status"] == "ok", cleared_timescale
             cleared_analysis_db = assert_status(
                 await client.post("/api/config", json={"values": {"DATABASE_URL": ""}}),
                 200,
@@ -564,6 +606,7 @@ async def main() -> None:
         environment_module.asyncpg.connect = original_environment_connect
         inference_module._local_image_inference = original_local_image_inference
         log_analysis_module.asyncpg.connect = original_log_analysis_connect
+        maintenance_module.asyncpg.connect = original_maintenance_connect
         remote_ops_module.REMOTE_ACTIONS.clear()
         remote_ops_module.REMOTE_ACTIONS.update(original_remote_actions)
         if started:

@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from datetime import datetime, timedelta, timezone
+from typing import Any, Awaitable, Callable, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 from .capture import CaptureManager, CaptureStartRequest
 from .config import Settings, get_settings
+from .detections import DetectionRecord
 from .spool import DetectionSpool
 from .ui_events import UiEventLog, sanitize_payload
 
@@ -18,6 +19,7 @@ EventEmitter = Callable[[str, str, str, dict[str, Any]], Awaitable[None]]
 
 
 class WriteRunStartRequest(BaseModel):
+    input_mode: Literal["live", "sample"] = "live"
     max_frames: int = Field(default=120, ge=1, le=10_000)
     frame_interval: int | None = Field(default=None, ge=1, le=10_000)
     device_id: int | None = Field(default=None, ge=1)
@@ -27,6 +29,7 @@ class WriteRunStartRequest(BaseModel):
 
 @dataclass
 class WriteFlowOptions:
+    input_mode: Literal["live", "sample"] = "live"
     max_frames: int = 120
     frame_interval: int | None = None
     device_id: int | None = None
@@ -63,7 +66,7 @@ class WriteRunManager:
                 return {"status": "running", "message": "采集写入流程正在运行", "run": self._snapshot_locked()}
 
             capture_state = await self._capture.status()
-            if capture_state.get("status") in {"running", "stopping"}:
+            if request.input_mode == "live" and capture_state.get("status") in {"running", "stopping"}:
                 self._status = "blocked"
                 self._message = "当前采集任务正在运行"
                 return {"status": "blocked", "message": self._message, "run": self._snapshot_locked()}
@@ -75,6 +78,7 @@ class WriteRunManager:
             self._finished_at = None
             self._last_result = None
             options = WriteFlowOptions(
+                input_mode=request.input_mode,
                 max_frames=request.max_frames,
                 frame_interval=request.frame_interval,
                 device_id=request.device_id,
@@ -150,6 +154,9 @@ async def run_write_flow(
     options: WriteFlowOptions,
     emit: EventEmitter,
 ) -> dict[str, Any]:
+    if options.input_mode == "sample":
+        return await run_sample_write_flow(spool, options, emit)
+
     settings = get_settings()
     await spool.start(settings)
 
@@ -205,6 +212,146 @@ async def run_write_flow(
     message = "采集写入流程异常结束" if status == "error" else "采集写入流程已完成"
     await emit(status, "write_run_complete", message, {"final_state": final_state})
     return {"status": status, "message": message, "final_state": sanitize_payload(final_state)}
+
+
+async def run_sample_write_flow(
+    spool: DetectionSpool,
+    options: WriteFlowOptions,
+    emit: EventEmitter,
+) -> dict[str, Any]:
+    settings = get_settings()
+    await spool.start(settings)
+
+    frame_interval = max(options.frame_interval or settings.frame_interval, 1)
+    device_id = options.device_id or settings.capture_device_id
+    task_id = options.task_id or settings.capture_task_id
+    source_kind = settings.capture_source_kind if settings.capture_source_kind in {"http_mjpeg", "rtsp", "rtmp", "camera", "file"} else "file"
+    generated = 0
+    queued = 0
+    had_error = False
+
+    await emit("info", "settings", "运行配置已加载", _settings_summary(settings))
+    await emit(
+        "info",
+        "sample_input_start",
+        "样例输入写入流程已启动",
+        {
+            "max_frames": options.max_frames,
+            "frame_interval": frame_interval,
+            "device_id": device_id,
+            "task_id": task_id,
+            "database_configured": bool(settings.database_url),
+        },
+    )
+
+    batch: list[DetectionRecord] = []
+    for frame_index in range(1, options.max_frames + 1):
+        if (frame_index - 1) % frame_interval != 0:
+            continue
+
+        records = _sample_records_for_frame(
+            frame_index=frame_index,
+            max_frames=options.max_frames,
+            device_id=device_id,
+            task_id=task_id,
+            source_kind=source_kind,
+            inference_device=settings.inference_device,
+        )
+        batch.extend(records)
+        generated += len(records)
+
+        if len(batch) >= 24:
+            inserted_ids = await spool.enqueue(batch, settings)
+            queued += len(inserted_ids)
+            await emit(
+                "info",
+                "sample_input_batch",
+                f"样例输入已入队 {queued} 条检测记录",
+                {"frame_index": frame_index, "queued": queued, "generated": generated},
+            )
+            batch = []
+
+    if batch:
+        inserted_ids = await spool.enqueue(batch, settings)
+        queued += len(inserted_ids)
+
+    await emit(
+        "ok",
+        "sample_input_complete",
+        f"样例输入已完成，入队 {queued} 条检测记录",
+        {"queued": queued, "generated": generated},
+    )
+
+    if options.flush_on_exit:
+        flush_result = await spool.flush(get_settings())
+        flush_level = _level_for_flush(flush_result)
+        await emit(flush_level, "spool_flush", _flush_message(flush_result), flush_result)
+        if flush_result.get("status") == "failed":
+            had_error = True
+
+    status = "error" if had_error else "ok"
+    message = "样例输入写入流程异常结束" if had_error else "样例输入写入流程已完成"
+    result = {
+        "status": status,
+        "message": message,
+        "final_state": {
+            "status": "stopped",
+            "frames_read": options.max_frames,
+            "frames_inferred": max(1, options.max_frames // frame_interval),
+            "detections_queued": queued,
+        },
+    }
+    await emit(status, "write_run_complete", message, result)
+    return sanitize_payload(result)
+
+
+def _sample_records_for_frame(
+    *,
+    frame_index: int,
+    max_frames: int,
+    device_id: int,
+    task_id: int,
+    source_kind: str,
+    inference_device: str,
+) -> list[DetectionRecord]:
+    now = datetime.now(timezone.utc)
+    span_seconds = min(max(max_frames, 30), 900)
+    observed_at = now - timedelta(seconds=max(0, span_seconds - frame_index))
+    profiles = [
+        ("person", 0.86, (80, 42, 410, 620)),
+        ("laptop", 0.72, (470, 210, 690, 360)),
+        ("chair", 0.64, (700, 260, 860, 620)),
+        ("bottle", 0.58, (920, 300, 980, 480)),
+        ("cell phone", 0.53, (520, 390, 640, 500)),
+    ]
+    records: list[DetectionRecord] = []
+    for offset, (object_class, confidence, box) in enumerate(profiles):
+        cadence = offset + 2
+        if frame_index % cadence != 0 and offset > 0:
+            continue
+        drift = (frame_index % 17) * 1.5
+        x1, y1, x2, y2 = box
+        x1 += drift
+        x2 += drift
+        records.append(
+            DetectionRecord(
+                time=observed_at,
+                device_id=device_id,
+                task_id=task_id,
+                object_class=object_class,
+                confidence=max(0.3, min(confidence + ((frame_index % 5) - 2) * 0.01, 0.97)),
+                bbox_x1=x1,
+                bbox_y1=y1,
+                bbox_x2=x2,
+                bbox_y2=y2,
+                bbox_center_x=(x1 + x2) / 2,
+                bbox_center_y=(y1 + y2) / 2,
+                frame_index=frame_index,
+                source_kind=source_kind,
+                inference_device=inference_device or "auto",
+            )
+        )
+    return records
 
 
 def _settings_summary(settings: Settings) -> dict[str, Any]:
