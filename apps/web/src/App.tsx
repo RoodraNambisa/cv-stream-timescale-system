@@ -2061,12 +2061,14 @@ function LogsPage({
     },
   })
 
+  const normalizedClearConfirm = clearConfirm.trim().toUpperCase()
+
   const clearData = useMutation({
     mutationFn: () =>
       clearRuntimeData({
         clear_spool: clearSpool,
         clear_timescale: clearTimescale,
-        confirm: clearConfirm,
+        confirm: normalizedClearConfirm,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries()
@@ -2084,29 +2086,39 @@ function LogsPage({
     ? queryCards.find((result) => result.id === selectedQuery.id)
     : queryCards[0]
   const canClearData = clearSpool || clearTimescale
-  const actionMessage = String(
-    startRun.error?.message
-      ?? stopRun.error?.message
-      ?? runQueries.error?.message
-      ?? clearLogs.error?.message
-      ?? clearData.error?.message
-      ?? startRun.data?.message
-      ?? stopRun.data?.message
-      ?? analysisResult?.message
-      ?? clearLogs.data?.message
-      ?? clearData.data?.message
-      ?? '',
-  )
-  const actionMessageIsError = Boolean(
-    startRun.error
-      || stopRun.error
-      || runQueries.error
-      || clearLogs.error
-      || clearData.error
-      || analysisResult?.status === 'error'
-      || clearData.data?.status === 'error'
-      || clearData.data?.status === 'blocked',
-  )
+  const databaseClearNeedsConfirm = clearTimescale && normalizedClearConfirm !== 'CLEAR_DATA'
+  const actionState = (() => {
+    if (activePane === 'maintenance') {
+      return {
+        message: String(clearLogs.error?.message ?? clearData.error?.message ?? clearLogs.data?.message ?? clearData.data?.message ?? ''),
+        isError: Boolean(
+          clearLogs.error
+            || clearData.error
+            || clearData.data?.status === 'error'
+            || clearData.data?.status === 'blocked',
+        ),
+      }
+    }
+    if (activePane === 'analysis') {
+      return {
+        message: String(runQueries.error?.message ?? startRun.error?.message ?? analysisResult?.message ?? startRun.data?.message ?? ''),
+        isError: Boolean(runQueries.error || startRun.error || analysisResult?.status === 'error'),
+      }
+    }
+    if (activePane === 'write') {
+      const runMessage = currentRun?.run_id ? currentRun.message : ''
+      return {
+        message: String(startRun.error?.message ?? stopRun.error?.message ?? stopRun.data?.message ?? runMessage ?? startRun.data?.message ?? ''),
+        isError: Boolean(startRun.error || stopRun.error || currentRun?.status === 'error' || currentRun?.status === 'blocked'),
+      }
+    }
+    return {
+      message: logEvents.isError ? logEvents.error.message : '',
+      isError: logEvents.isError,
+    }
+  })()
+  const actionMessage = actionState.message
+  const actionMessageIsError = actionState.isError
 
   useEffect(() => {
     if (autoScroll && !newestFirst) {
@@ -2330,10 +2342,10 @@ function LogsPage({
               <input
                 value={clearConfirm}
                 placeholder="输入 CLEAR_DATA 后可清空数据库记录"
-                onChange={(event) => setClearConfirm(event.target.value)}
+                onChange={(event) => setClearConfirm(event.target.value.toUpperCase())}
               />
             </label>
-            {clearTimescale && clearConfirm !== 'CLEAR_DATA' && (
+            {databaseClearNeedsConfirm && (
               <span className="terminal-inline-warning">需要确认码 CLEAR_DATA</span>
             )}
             <button

@@ -24,7 +24,8 @@ async def clear_runtime_data(
     request: ClearRuntimeDataRequest | None = None,
 ) -> dict[str, Any]:
     request = request or ClearRuntimeDataRequest()
-    if request.clear_timescale and request.confirm != "CLEAR_DATA":
+    confirm = (request.confirm or "").strip().upper()
+    if request.clear_timescale and confirm != "CLEAR_DATA":
         return {
             "status": "blocked",
             "message": "清空数据库记录需要确认码",
