@@ -2080,7 +2080,6 @@ function LogsPage({
     ? queryCards.find((result) => result.id === selectedQuery.id)
     : queryCards[0]
   const canClearData = clearSpool || clearTimescale
-  const timescaleConfirmNeeded = clearTimescale && clearConfirm !== 'CLEAR_DATA'
   const actionMessage = String(
     startRun.error?.message
       ?? stopRun.error?.message
@@ -2093,6 +2092,16 @@ function LogsPage({
       ?? clearLogs.data?.message
       ?? clearData.data?.message
       ?? '',
+  )
+  const actionMessageIsError = Boolean(
+    startRun.error
+      || stopRun.error
+      || runQueries.error
+      || clearLogs.error
+      || clearData.error
+      || analysisResult?.status === 'error'
+      || clearData.data?.status === 'error'
+      || clearData.data?.status === 'blocked',
   )
 
   useEffect(() => {
@@ -2299,10 +2308,13 @@ function LogsPage({
                 onChange={(event) => setClearConfirm(event.target.value)}
               />
             </label>
+            {clearTimescale && clearConfirm !== 'CLEAR_DATA' && (
+              <span className="terminal-inline-warning">需要确认码 CLEAR_DATA</span>
+            )}
             <button
               type="button"
               onClick={() => clearData.mutate()}
-              disabled={clearData.isPending || !canClearData || timescaleConfirmNeeded}
+              disabled={clearData.isPending || !canClearData}
             >
               <HardDrive size={16} aria-hidden="true" />
               清空数据
@@ -2311,7 +2323,7 @@ function LogsPage({
         )}
 
         {actionMessage && (
-          <div className={`console-action-message ${startRun.error || stopRun.error || runQueries.error || clearLogs.error || clearData.error || analysisResult?.status === 'error' || clearData.data?.status === 'error' ? 'error' : 'ok'}`}>
+          <div className={`console-action-message ${actionMessageIsError ? 'error' : 'ok'}`}>
             {actionMessage}
           </div>
         )}
