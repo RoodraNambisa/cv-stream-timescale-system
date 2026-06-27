@@ -33,6 +33,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   type AnalysisSummary,
+  type AnalysisQueryItem,
   type AnalysisQueryResult,
   type ActionResponse,
   type CaptureStatus,
@@ -2085,6 +2086,10 @@ function LogsPage({
   const selectedResult = selectedQuery
     ? queryCards.find((result) => result.id === selectedQuery.id)
     : queryCards[0]
+  const plainAnalysisText = activePane === 'analysis'
+    ? plainAnalysisDetails(selectedQuery, selectedResult, runQueries.isPending, analysisQueries.isLoading).join('\n')
+    : ''
+  const plainTerminalText = [plainAnalysisText, plainLogText].filter(Boolean).join('\n\n')
   const canClearData = clearSpool || clearTimescale
   const databaseClearNeedsConfirm = clearTimescale && normalizedClearConfirm !== 'CLEAR_DATA'
   const actionState = (() => {
@@ -2365,9 +2370,13 @@ function LogsPage({
           </div>
         )}
 
+        {activePane === 'analysis' && logDisplayMode === 'console' && (
+          <AnalysisQueryDetail query={selectedQuery} result={selectedResult} />
+        )}
+
         {logDisplayMode === 'plain' ? (
           <pre className="plain-terminal-log" aria-live="polite" ref={plainLogRef}>
-            {plainLogText || '等待运行日志...'}
+            {plainTerminalText || '等待运行日志...'}
           </pre>
         ) : (
           <div className="terminal-log" aria-live="polite">
@@ -2381,27 +2390,50 @@ function LogsPage({
         )}
       </div>
 
-      {activePane === 'analysis' && (
-        <div className="analysis-console-results">
-          <div className="analysis-console-head">
-            <span>查询语句与结果</span>
-            <strong>{selectedResult ? '已执行' : '待执行'}</strong>
-          </div>
-          {!selectedResult && selectedQuery && (
-            <article className="query-result-card">
-              <div className="query-result-head">
-                <strong>查询 {selectedQuery.id} · {cleanQueryTitle(selectedQuery.title)}</strong>
-                <span className="mini-status warn">待执行</span>
-              </div>
-              <pre className="sql-code">{selectedQuery.sql}</pre>
-            </article>
-          )}
-          {selectedResult && (
-            <SqlResultCard result={selectedResult} />
-          )}
-        </div>
-      )}
     </section>
+  )
+}
+
+function AnalysisQueryDetail({
+  query,
+  result,
+}: {
+  query?: AnalysisQueryItem
+  result?: AnalysisQueryResult
+}) {
+  if (!query && !result) {
+    return (
+      <div className="analysis-console-results in-shell">
+        <div className="analysis-console-head">
+          <span>查询语句与结果</span>
+          <strong>未加载</strong>
+        </div>
+        <div className="notice warn">正在读取查询清单</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="analysis-console-results in-shell">
+      <div className="analysis-console-head">
+        <span>查询语句与结果</span>
+        <strong>{result ? '已执行' : '待执行'}</strong>
+      </div>
+      {result ? (
+        <SqlResultCard result={result} />
+      ) : query ? (
+        <article className="query-result-card">
+          <div className="query-result-head">
+            <strong>查询 {query.id} · {cleanQueryTitle(query.title)}</strong>
+            <span className="mini-status warn">待执行</span>
+          </div>
+          <pre className="sql-code">{query.sql}</pre>
+          <div className="query-result-foot">
+            <span>点击“执行当前查询”后显示结果表</span>
+          </div>
+        </article>
+      ) : null}
+    </div>
   )
 }
 
@@ -3061,6 +3093,88 @@ function plainLogLines(events: UiLogEvent[], errorMessage: string): string[] {
     const details = plainLogDetails(event.details)
     return details ? [base, `    ${details}`] : [base]
   })
+}
+
+function plainAnalysisDetails(
+  query: AnalysisQueryItem | undefined,
+  result: AnalysisQueryResult | undefined,
+  isRunning: boolean,
+  isLoading: boolean,
+): string[] {
+  if (isLoading) {
+    return ['查询详情', '正在读取查询清单...']
+  }
+  const target = result ?? query
+  if (!target) {
+    return ['查询详情', '未读取到查询语句']
+  }
+
+  const lines = [
+    '查询详情',
+    `查询 ${target.id} · ${cleanQueryTitle(target.title)}`,
+    isRunning ? '状态: 执行中' : `状态: ${result ? analysisStatusLabel(result.status) : '待执行'}`,
+    '',
+    'SQL:',
+    indentPlainBlock(target.sql),
+  ]
+
+  if (!result) {
+    return [...lines, '', '结果: 点击“执行当前查询”后显示结果表']
+  }
+
+  if (result.error) {
+    lines.push('', `错误: ${result.error}`)
+  }
+  result.warnings?.forEach((warning) => {
+    lines.push('', `提醒: ${warning}`)
+  })
+
+  if (result.rows.length) {
+    const columns = result.columns.length
+      ? result.columns
+      : Array.from(new Set(result.rows.flatMap((row) => Object.keys(row))))
+    lines.push('', `结果: ${numberFormatter.format(result.row_count)} 行`)
+    lines.push(plainResultTable(columns, result.rows))
+  } else if (!result.error) {
+    lines.push('', '结果: 查询完成，当前时间窗口暂无记录')
+  }
+
+  if (result.truncated) {
+    lines.push('', '结果已截取部分行')
+  }
+  return lines
+}
+
+function indentPlainBlock(value: string): string {
+  return value
+    .trim()
+    .split('\n')
+    .map((line) => `  ${line}`)
+    .join('\n')
+}
+
+function plainResultTable(columns: string[], rows: Record<string, unknown>[]): string {
+  const visibleRows = rows.slice(0, 12)
+  const widths = columns.map((column) => {
+    const cells = visibleRows.map((row) => plainTableCell(row[column]))
+    return Math.min(28, Math.max(column.length, ...cells.map((cell) => cell.length)))
+  })
+  const renderRow = (values: string[]) =>
+    values.map((value, index) => fitPlainCell(value, widths[index])).join('  ')
+  const head = renderRow(columns)
+  const divider = widths.map((width) => '-'.repeat(width)).join('  ')
+  const body = visibleRows.map((row) => renderRow(columns.map((column) => plainTableCell(row[column]))))
+  const suffix = rows.length > visibleRows.length ? [`... 还有 ${numberFormatter.format(rows.length - visibleRows.length)} 行`] : []
+  return [head, divider, ...body, ...suffix].join('\n')
+}
+
+function plainTableCell(value: unknown): string {
+  return formatValue(value).replace(/\s+/g, ' ')
+}
+
+function fitPlainCell(value: string, width: number): string {
+  const normalized = value.length > width ? `${value.slice(0, Math.max(0, width - 3))}...` : value
+  return normalized.padEnd(width, ' ')
 }
 
 function plainLogDetails(details: Record<string, unknown>): string {

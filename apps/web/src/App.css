@@ -1434,6 +1434,13 @@ h3 {
   border-color: var(--border);
 }
 
+.analysis-console-results.in-shell {
+  margin: 12px 18px 0;
+  border: 1px solid rgba(219, 233, 255, 0.12);
+  padding: 12px;
+  background: #07111f;
+}
+
 .analysis-console-head {
   display: flex;
   align-items: center;
@@ -1445,6 +1452,17 @@ h3 {
   color: var(--text);
   font-family: var(--mono);
   font-size: 13px;
+}
+
+.analysis-console-results.in-shell .analysis-console-head {
+  color: #8ea4c1;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.analysis-console-results.in-shell .analysis-console-head strong {
+  color: #dbe9ff;
 }
 
 .query-preview-list {
@@ -1459,8 +1477,17 @@ h3 {
   background: #ffffff;
 }
 
+.analysis-console-results.in-shell .query-result-card {
+  border-color: rgba(219, 233, 255, 0.12);
+  background: #0b1728;
+}
+
 .query-result-card.error {
   border-color: #eba1a5;
+}
+
+.analysis-console-results.in-shell .query-result-card.error {
+  border-color: rgba(207, 63, 70, 0.55);
 }
 
 .query-result-head,
@@ -1477,11 +1504,19 @@ h3 {
   font-size: 15px;
 }
 
+.analysis-console-results.in-shell .query-result-head strong {
+  color: #eff6ff;
+}
+
 .query-result-foot {
   margin-top: 8px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.analysis-console-results.in-shell .query-result-foot {
+  color: #8ea4c1;
 }
 
 .sql-code {
@@ -1501,6 +1536,17 @@ h3 {
 
 .result-table-wrap {
   overflow-x: auto;
+}
+
+.analysis-console-results.in-shell .data-table th,
+.analysis-console-results.in-shell .data-table td {
+  border-bottom-color: rgba(219, 233, 255, 0.12);
+  color: #dbe9ff;
+}
+
+.analysis-console-results.in-shell .data-table th {
+  color: #9fb2cc;
+  background: rgba(255, 255, 255, 0.045);
 }
 
 .remote-password-row {
