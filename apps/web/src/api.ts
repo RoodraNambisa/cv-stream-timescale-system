@@ -148,6 +148,7 @@ export type AnalysisQueryResult = AnalysisQueryItem & {
   row_count: number
   truncated?: boolean
   error?: string
+  warnings?: string[]
 }
 
 export type AnalysisQueriesResponse = {

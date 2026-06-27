@@ -109,7 +109,7 @@ async def run_analysis_query_sections(
             results.append(result)
             await event_log.append(
                 source="analysis",
-                level="ok" if result["status"] == "ok" else "error",
+                level=_event_level_for_result(str(result["status"])),
                 event="analysis_query_result",
                 message=f"{section['title']} · {result['status']}",
                 details={
@@ -121,8 +121,15 @@ async def run_analysis_query_sections(
     finally:
         await connection.close()
 
-    status = "ok" if all(result["status"] == "ok" for result in results) else "error"
-    message = "时序分析查询完成" if status == "ok" else "部分时序分析查询失败"
+    if all(result["status"] == "ok" for result in results):
+        status = "ok"
+        message = "时序分析查询完成"
+    elif any(result["status"] == "error" for result in results):
+        status = "error"
+        message = "部分时序分析查询失败"
+    else:
+        status = "warn"
+        message = "时序分析查询完成，部分维护语句未执行"
     await event_log.append(
         source="analysis",
         level=status,
@@ -145,6 +152,7 @@ async def _run_section(
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     columns: list[str] = []
+    warnings: list[str] = []
     statements = _split_statements(str(section["sql"]))
 
     try:
@@ -155,7 +163,13 @@ async def _run_section(
                 fetched = await prepared.fetch()
                 rows = [_plain_row(row) for row in fetched[:row_limit]]
             else:
-                await connection.execute(statement)
+                try:
+                    await connection.execute(statement)
+                except Exception as exc:
+                    if _can_continue_after_statement_error(statement, exc):
+                        warnings.append("连续聚合刷新权限不足，已直接读取现有聚合结果")
+                        continue
+                    raise
     except Exception as exc:
         return {
             **section,
@@ -165,15 +179,17 @@ async def _run_section(
             "row_count": len(rows),
             "truncated": False,
             "error": str(exc),
+            "warnings": warnings,
         }
 
     return {
         **section,
-        "status": "ok",
+        "status": "warn" if warnings else "ok",
         "columns": columns,
         "rows": rows,
         "row_count": len(rows),
         "truncated": len(rows) >= row_limit,
+        "warnings": warnings,
     }
 
 
@@ -192,6 +208,23 @@ def _split_statements(sql: str) -> list[str]:
 def _returns_rows(statement: str) -> bool:
     head = statement.lstrip().split(None, 1)[0].casefold()
     return head in {"select", "with", "show", "explain"}
+
+
+def _can_continue_after_statement_error(statement: str, exc: Exception) -> bool:
+    normalized_statement = statement.casefold()
+    normalized_error = str(exc).casefold()
+    return (
+        "refresh_continuous_aggregate" in normalized_statement
+        and "must be owner of view" in normalized_error
+    )
+
+
+def _event_level_for_result(status: str) -> str:
+    if status == "error":
+        return "error"
+    if status == "warn":
+        return "warn"
+    return "ok"
 
 
 def _plain_row(row: asyncpg.Record) -> dict[str, Any]:

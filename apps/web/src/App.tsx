@@ -127,10 +127,10 @@ const logSourceOptions = [
 
 const logLevelOptions: Array<{ value: 'all' | LogLevel; label: string }> = [
   { value: 'all', label: '全部级别' },
-  { value: 'info', label: 'info' },
-  { value: 'ok', label: 'ok' },
-  { value: 'warn', label: 'warn' },
-  { value: 'error', label: 'error' },
+  { value: 'info', label: '信息' },
+  { value: 'ok', label: '正常' },
+  { value: 'warn', label: '警告' },
+  { value: 'error', label: '错误' },
 ]
 
 type LogPaneKey = 'runtime' | 'write' | 'analysis' | 'maintenance'
@@ -1993,6 +1993,7 @@ function LogsPage({
   const [clearSpool, setClearSpool] = useState(true)
   const [clearTimescale, setClearTimescale] = useState(false)
   const [clearConfirm, setClearConfirm] = useState('')
+  const [selectedQueryId, setSelectedQueryId] = useState('')
   const logEndRef = useRef<HTMLDivElement | null>(null)
   const runningCapture = captureStatus?.status === 'running' || captureStatus?.status === 'stopping'
 
@@ -2018,6 +2019,8 @@ function LogsPage({
     queryKey: ['analysis-log-queries', apiKeySalt],
     queryFn: fetchAnalysisQueries,
   })
+  const availableQueries = analysisQueries.data?.queries ?? []
+  const selectedQuery = availableQueries.find((query) => String(query.id) === selectedQueryId) ?? availableQueries[0]
 
   const startRun = useMutation({
     mutationFn: (inputMode: WriteRunInputMode) =>
@@ -2038,7 +2041,11 @@ function LogsPage({
   })
 
   const runQueries = useMutation({
-    mutationFn: () => runAnalysisQueries({ row_limit: 80 }),
+    mutationFn: () =>
+      runAnalysisQueries({
+        query_ids: selectedQuery ? [selectedQuery.id] : [],
+        row_limit: 80,
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['ui-log-events'] })
     },
@@ -2069,7 +2076,9 @@ function LogsPage({
   const runActive = currentRun?.status === 'running' || currentRun?.status === 'stopping'
   const analysisResult = runQueries.data
   const queryCards = analysisResult?.results ?? []
-  const availableQueries = analysisQueries.data?.queries ?? analysisResult?.queries ?? []
+  const selectedResult = selectedQuery
+    ? queryCards.find((result) => result.id === selectedQuery.id)
+    : queryCards[0]
   const canClearData = clearSpool || clearTimescale
   const timescaleConfirmNeeded = clearTimescale && clearConfirm !== 'CLEAR_DATA'
   const actionMessage = String(
@@ -2097,14 +2106,14 @@ function LogsPage({
       <div className="log-console-shell">
         <header className="log-console-header">
           <div>
-            <span className="console-kicker">cv-stream console</span>
-            <h2>运行终端</h2>
+            <span className="console-kicker">视频检测运行台</span>
+            <h2>日志终端</h2>
           </div>
           <div className="console-situation" aria-label="情况日志">
-            <span>capture:{captureStatus?.status ?? 'idle'}</span>
-            <span>run:{currentRun?.status ?? 'idle'}</span>
-            <span>frames:{numberFormatter.format(captureStatus?.frames_read ?? 0)}</span>
-            <span>queued:{numberFormatter.format(captureStatus?.detections_queued ?? 0)}</span>
+            <span>采集：{statusLabel(captureStatus?.status ?? 'idle')}</span>
+            <span>流程：{statusLabel(currentRun?.status ?? 'idle')}</span>
+            <span>帧数：{numberFormatter.format(captureStatus?.frames_read ?? 0)}</span>
+            <span>入队：{numberFormatter.format(captureStatus?.detections_queued ?? 0)}</span>
           </div>
         </header>
 
@@ -2130,7 +2139,7 @@ function LogsPage({
         {activePane === 'runtime' && (
           <div className="terminal-command-row">
             <label>
-              <span>source</span>
+              <span>来源</span>
               <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
                 {logSourceOptions.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -2138,7 +2147,7 @@ function LogsPage({
               </select>
             </label>
             <label>
-              <span>level</span>
+              <span>级别</span>
               <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
                 {logLevelOptions.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -2146,12 +2155,12 @@ function LogsPage({
               </select>
             </label>
             <label className="terminal-search-field">
-              <span>grep</span>
+              <span>关键词</span>
               <input
                 inputMode="search"
                 type="search"
                 value={keyword}
-                placeholder="event / message / status"
+                placeholder="事件、消息、状态"
                 onChange={(event) => setKeyword(event.target.value)}
               />
             </label>
@@ -2161,7 +2170,7 @@ function LogsPage({
                 checked={errorOnly}
                 onChange={(event) => setErrorOnly(event.target.checked)}
               />
-              errors
+              只看错误
             </label>
             <label className="terminal-check">
               <input
@@ -2169,11 +2178,11 @@ function LogsPage({
                 checked={autoScroll}
                 onChange={(event) => setAutoScroll(event.target.checked)}
               />
-              tail
+              跟随最新
             </label>
             <button type="button" onClick={() => setNewestFirst((current) => !current)}>
               <ArrowDownUp size={16} aria-hidden="true" />
-              {newestFirst ? 'newest' : 'oldest'}
+              {newestFirst ? '倒序' : '正序'}
             </button>
           </div>
         )}
@@ -2181,7 +2190,7 @@ function LogsPage({
         {activePane === 'write' && (
           <div className="terminal-command-row">
             <label>
-              <span>frames</span>
+              <span>帧数</span>
               <input
                 inputMode="numeric"
                 min={1}
@@ -2213,20 +2222,33 @@ function LogsPage({
               disabled={stopRun.isPending || !runActive}
             >
               <Square size={16} aria-hidden="true" />
-              stop
+              停止
             </button>
           </div>
         )}
 
         {activePane === 'analysis' && (
           <div className="terminal-command-row">
+            <label className="terminal-search-field">
+              <span>查询语句</span>
+              <select
+                value={selectedQuery ? String(selectedQuery.id) : ''}
+                onChange={(event) => setSelectedQueryId(event.target.value)}
+              >
+                {availableQueries.map((query) => (
+                  <option key={query.id} value={query.id}>
+                    {query.id}. {cleanQueryTitle(query.title)}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               type="button"
               onClick={() => runQueries.mutate()}
-              disabled={runQueries.isPending}
+              disabled={runQueries.isPending || !selectedQuery}
             >
               <Database size={16} aria-hidden="true" />
-              执行内置查询
+              执行当前查询
             </button>
             <button
               type="button"
@@ -2236,9 +2258,9 @@ function LogsPage({
               <Play size={16} aria-hidden="true" />
               先写入样例输入
             </button>
-            <span className="terminal-inline-stat">{availableQueries.length} queries</span>
-            <span className={`mini-status ${analysisResult?.status === 'error' ? 'error' : 'info'}`}>
-              {analysisResult?.status ?? 'ready'}
+            <span className="terminal-inline-stat">{availableQueries.length} 个查询</span>
+            <span className={`mini-status ${statusClassName(analysisResult?.status ?? 'info')}`}>
+              {analysisStatusLabel(analysisResult?.status ?? 'ready')}
             </span>
           </div>
         )}
@@ -2259,7 +2281,7 @@ function LogsPage({
                 checked={clearSpool}
                 onChange={(event) => setClearSpool(event.target.checked)}
               />
-              SQLite spool
+              SQLite 缓存
             </label>
             <label className="terminal-check">
               <input
@@ -2267,13 +2289,13 @@ function LogsPage({
                 checked={clearTimescale}
                 onChange={(event) => setClearTimescale(event.target.checked)}
               />
-              Timescale records
+              TimescaleDB 记录
             </label>
             <label className="terminal-search-field">
-              <span>confirm</span>
+              <span>确认码</span>
               <input
                 value={clearConfirm}
-                placeholder="CLEAR_DATA"
+                placeholder="输入 CLEAR_DATA 后可清空数据库记录"
                 onChange={(event) => setClearConfirm(event.target.value)}
               />
             </label>
@@ -2296,7 +2318,7 @@ function LogsPage({
 
         <div className="terminal-log" aria-live="polite">
           {logEvents.isError && <div className="terminal-empty">{logEvents.error.message}</div>}
-          {!logEvents.isError && !visibleEvents.length && <div className="terminal-empty">waiting for events...</div>}
+          {!logEvents.isError && !visibleEvents.length && <div className="terminal-empty">等待运行日志...</div>}
           {visibleEvents.map((event) => (
             <LogEventRow event={event} key={event.id} />
           ))}
@@ -2307,28 +2329,20 @@ function LogsPage({
       {activePane === 'analysis' && (
         <div className="analysis-console-results">
           <div className="analysis-console-head">
-            <span>SQL / result capture</span>
-            <strong>{queryCards.length ? `${queryCards.length} results` : `${availableQueries.length} queries`}</strong>
+            <span>查询语句与结果</span>
+            <strong>{selectedResult ? '已执行' : '待执行'}</strong>
           </div>
-          {!queryCards.length && (
-            <div className="query-preview-list">
-              {availableQueries.map((query) => (
-                <article className="query-result-card" key={query.id}>
-                  <div className="query-result-head">
-                    <strong>S{19 + query.id} · {query.title}</strong>
-                    <span className="mini-status warn">待执行</span>
-                  </div>
-                  <pre className="sql-code">{query.sql}</pre>
-                </article>
-              ))}
-            </div>
+          {!selectedResult && selectedQuery && (
+            <article className="query-result-card">
+              <div className="query-result-head">
+                <strong>查询 {selectedQuery.id} · {cleanQueryTitle(selectedQuery.title)}</strong>
+                <span className="mini-status warn">待执行</span>
+              </div>
+              <pre className="sql-code">{selectedQuery.sql}</pre>
+            </article>
           )}
-          {queryCards.length > 0 && (
-            <div className="query-preview-list">
-              {queryCards.map((result) => (
-                <SqlResultCard key={result.id} result={result} />
-              ))}
-            </div>
+          {selectedResult && (
+            <SqlResultCard result={selectedResult} />
           )}
         </div>
       )}
@@ -2341,13 +2355,13 @@ function LogEventRow({ event }: { event: UiLogEvent }) {
     <article className={`log-event-row ${event.level}`}>
       <div className="log-event-meta">
         <span>{formatDateTime(event.time)}</span>
-        <span className="terminal-level">[{event.level}]</span>
-        <span>{event.source}:{event.event}</span>
+        <span className="terminal-level">[{logLevelLabel(event.level)}]</span>
+        <span>{logSourceLabel(event.source)}</span>
       </div>
       <p>{event.message}</p>
       {Object.keys(event.details ?? {}).length > 0 && (
         <details>
-          <summary>payload</summary>
+          <summary>详情</summary>
           <pre>{formatLogDetails(event.details)}</pre>
         </details>
       )}
@@ -2363,11 +2377,14 @@ function SqlResultCard({ result }: { result: AnalysisQueryResult }) {
   return (
     <article className={`query-result-card ${result.status}`}>
       <div className="query-result-head">
-        <strong>S{19 + result.id} · {result.title}</strong>
-        <span className={`mini-status ${result.status === 'ok' ? 'ok' : 'error'}`}>{result.status}</span>
+        <strong>查询 {result.id} · {cleanQueryTitle(result.title)}</strong>
+        <span className={`mini-status ${statusClassName(result.status)}`}>{analysisStatusLabel(result.status)}</span>
       </div>
       <pre className="sql-code">{result.sql}</pre>
       {result.error && <div className="notice error">{result.error}</div>}
+      {result.warnings?.map((warning) => (
+        <div className="notice warn" key={warning}>{warning}</div>
+      ))}
       {!result.error && !result.rows.length && <div className="notice warn">查询完成，当前时间窗口暂无记录</div>}
       {!!result.rows.length && (
         <div className="result-table-wrap">
@@ -2392,8 +2409,8 @@ function SqlResultCard({ result }: { result: AnalysisQueryResult }) {
         </div>
       )}
       <div className="query-result-foot">
-        <span>{numberFormatter.format(result.row_count)} rows</span>
-        {result.truncated && <span>结果已截取</span>}
+        <span>{numberFormatter.format(result.row_count)} 行</span>
+        {result.truncated && <span>已截取部分结果</span>}
       </div>
     </article>
   )
@@ -2978,6 +2995,63 @@ function formatValue(value: unknown): string {
 
 function formatLogDetails(value: Record<string, unknown>): string {
   return JSON.stringify(value, null, 2)
+}
+
+function logLevelLabel(level: LogLevel | string): string {
+  const labels: Record<string, string> = {
+    info: '信息',
+    ok: '正常',
+    warn: '警告',
+    error: '错误',
+  }
+  return labels[level] ?? String(level)
+}
+
+function logSourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    write: '写入流程',
+    capture: '采集',
+    spool: '缓存写库',
+    analysis: '时序分析',
+    system: '系统',
+  }
+  return labels[source] ?? source
+}
+
+function statusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    idle: '空闲',
+    running: '运行中',
+    stopping: '停止中',
+    stopped: '已停止',
+    blocked: '已阻止',
+    error: '错误',
+    ok: '正常',
+    ready: '待执行',
+    warn: '警告',
+  }
+  return labels[status] ?? status
+}
+
+function analysisStatusLabel(status: string): string {
+  return statusLabel(status)
+}
+
+function statusClassName(status: string): 'info' | 'ok' | 'warn' | 'error' {
+  if (status === 'ok') {
+    return 'ok'
+  }
+  if (status === 'warn') {
+    return 'warn'
+  }
+  if (status === 'error') {
+    return 'error'
+  }
+  return 'info'
+}
+
+function cleanQueryTitle(title: string): string {
+  return title.replace(/^\s*\d+[.、]\s*/, '')
 }
 
 function boundedInteger(value: string, fallback: number, min: number, max: number): number {
