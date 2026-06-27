@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  Filter,
   Focus,
   Gauge,
   HardDrive,
@@ -32,6 +33,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   type AnalysisSummary,
+  type AnalysisQueryResult,
   type ActionResponse,
   type CaptureStatus,
   type CheckStatus,
@@ -40,17 +42,22 @@ import {
   type EnvironmentCheck,
   type EnvironmentResponse,
   type InferenceStatus,
+  type LogLevel,
   type RemoteAction,
   type SpoolStatus,
+  type UiLogEvent,
   type VideoConfig,
+  fetchAnalysisQueries,
   fetchCaptureStatus,
   fetchCaptureFrame,
   fetchAnalysisSummary,
   fetchEnvironment,
   fetchHealth,
   fetchInferenceStatus,
+  fetchLogEvents,
   fetchSpoolStatus,
   fetchVideoConfig,
+  fetchWriteRunStatus,
   flushSpool,
   getApiAuthToken,
   getApiBaseUrl,
@@ -58,8 +65,11 @@ import {
   probeVideo,
   reloadConfig,
   runRemoteAction,
+  runAnalysisQueries,
   setApiAuthToken,
   startCapture,
+  startWriteRun,
+  stopWriteRun,
   stopCapture,
   updateConfig,
 } from './api'
@@ -77,13 +87,14 @@ import {
 } from 'recharts'
 import './App.css'
 
-type TabKey = 'overview' | 'config' | 'tasks' | 'analysis'
+type TabKey = 'overview' | 'config' | 'tasks' | 'analysis' | 'logs'
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof Activity }> = [
   { key: 'overview', label: '总览', icon: Activity },
   { key: 'config', label: '配置', icon: Settings },
   { key: 'tasks', label: '任务', icon: ListChecks },
   { key: 'analysis', label: '分析', icon: BarChart3 },
+  { key: 'logs', label: '日志', icon: Terminal },
 ]
 
 const analysisQueries = [
@@ -101,6 +112,23 @@ const statusColors: Record<CheckStatus, string> = {
   warn: '#d58913',
   error: '#cf3f46',
 }
+
+const logSourceOptions = [
+  { value: 'all', label: '全部来源' },
+  { value: 'write', label: '写入流程' },
+  { value: 'capture', label: '采集' },
+  { value: 'spool', label: '缓存写库' },
+  { value: 'analysis', label: '时序分析' },
+  { value: 'system', label: '系统' },
+]
+
+const logLevelOptions: Array<{ value: 'all' | LogLevel; label: string }> = [
+  { value: 'all', label: '全部级别' },
+  { value: 'info', label: 'info' },
+  { value: 'ok', label: 'ok' },
+  { value: 'warn', label: 'warn' },
+  { value: 'error', label: 'error' },
+]
 
 type ConfigField = {
   key: string
@@ -805,6 +833,13 @@ function App() {
           analysisSummary={analysis.data}
           topClassChart={topClassChart}
           bucketChart={bucketChart}
+        />
+      )}
+
+      {activeTab === 'logs' && (
+        <LogsPage
+          apiKeySalt={`${frontendApiBase}:${frontendApiToken ? 'token' : 'open'}`}
+          captureStatus={capture.data}
         />
       )}
       </main>
@@ -1927,6 +1962,301 @@ function AnalysisPage({
   )
 }
 
+function LogsPage({
+  apiKeySalt,
+  captureStatus,
+}: {
+  apiKeySalt: string
+  captureStatus?: CaptureStatus
+}) {
+  const queryClient = useQueryClient()
+  const [sourceFilter, setSourceFilter] = useState('all')
+  const [levelFilter, setLevelFilter] = useState('all')
+  const [keyword, setKeyword] = useState('')
+  const [errorOnly, setErrorOnly] = useState(false)
+  const [newestFirst, setNewestFirst] = useState(false)
+  const [autoScroll, setAutoScroll] = useState(true)
+  const [maxFramesDraft, setMaxFramesDraft] = useState('120')
+  const logEndRef = useRef<HTMLDivElement | null>(null)
+  const runningCapture = captureStatus?.status === 'running' || captureStatus?.status === 'stopping'
+
+  const logEvents = useQuery({
+    queryKey: ['ui-log-events', apiKeySalt, sourceFilter, levelFilter, keyword, errorOnly],
+    queryFn: () =>
+      fetchLogEvents({
+        source: sourceFilter === 'all' ? '' : sourceFilter,
+        level: errorOnly ? 'error' : levelFilter === 'all' ? '' : levelFilter,
+        q: keyword,
+        limit: 400,
+      }),
+    refetchInterval: 2_000,
+  })
+
+  const writeRun = useQuery({
+    queryKey: ['write-run-status', apiKeySalt],
+    queryFn: fetchWriteRunStatus,
+    refetchInterval: 1_000,
+  })
+
+  const analysisQueries = useQuery({
+    queryKey: ['analysis-log-queries', apiKeySalt],
+    queryFn: fetchAnalysisQueries,
+  })
+
+  const startRun = useMutation({
+    mutationFn: () => startWriteRun({ max_frames: boundedInteger(maxFramesDraft, 120, 1, 10_000) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries()
+    },
+  })
+
+  const stopRun = useMutation({
+    mutationFn: stopWriteRun,
+    onSuccess: () => {
+      void queryClient.invalidateQueries()
+    },
+  })
+
+  const runQueries = useMutation({
+    mutationFn: () => runAnalysisQueries({ row_limit: 80 }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['ui-log-events'] })
+    },
+  })
+
+  const events = logEvents.data?.events ?? []
+  const visibleEvents = newestFirst ? [...events].reverse() : events
+  const currentRun = writeRun.data?.run
+  const runActive = currentRun?.status === 'running' || currentRun?.status === 'stopping'
+  const analysisResult = runQueries.data
+  const queryCards = analysisResult?.results ?? []
+  const availableQueries = analysisQueries.data?.queries ?? analysisResult?.queries ?? []
+
+  useEffect(() => {
+    if (autoScroll && !newestFirst) {
+      logEndRef.current?.scrollIntoView({ block: 'end' })
+    }
+  }, [autoScroll, newestFirst, events.length])
+
+  return (
+    <section className="logs-workspace">
+      <div className="panel logs-control-panel">
+        <PanelHeading eyebrow="Capture Write" title="采集写入流程" icon={Terminal} />
+        <div className="metric-grid">
+          <Metric label="流程状态" value={currentRun?.status ?? 'idle'} />
+          <Metric label="采集状态" value={captureStatus?.status ?? 'idle'} />
+          <Metric label="读取帧" value={captureStatus?.frames_read ?? 0} />
+          <Metric label="入队检测" value={captureStatus?.detections_queued ?? 0} />
+        </div>
+        <div className="log-run-controls">
+          <label className="compact-input">
+            <span>帧数</span>
+            <input
+              inputMode="numeric"
+              min={1}
+              max={10000}
+              type="number"
+              value={maxFramesDraft}
+              onChange={(event) => setMaxFramesDraft(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => startRun.mutate()}
+            disabled={startRun.isPending || runActive || runningCapture}
+          >
+            <Play size={17} aria-hidden="true" />
+            运行采集写入
+          </button>
+          <button
+            type="button"
+            onClick={() => stopRun.mutate()}
+            disabled={stopRun.isPending || !runActive}
+          >
+            <Square size={17} aria-hidden="true" />
+            停止流程
+          </button>
+          {(startRun.data || stopRun.data || startRun.error || stopRun.error) && (
+            <span className={`action-result ${startRun.error || stopRun.error ? 'error' : ''}`}>
+              {String(startRun.error?.message ?? stopRun.error?.message ?? startRun.data?.message ?? stopRun.data?.message ?? '')}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <aside className="panel logs-query-panel">
+        <PanelHeading eyebrow="Timescale SQL" title="时序分析查询" icon={BarChart3} compact />
+        <div className="metric-grid analysis-settings">
+          <Metric label="内置查询" value={availableQueries.length} />
+          <Metric label="执行状态" value={analysisResult?.status ?? 'ready'} />
+        </div>
+        <button
+          type="button"
+          onClick={() => runQueries.mutate()}
+          disabled={runQueries.isPending}
+        >
+          <Database size={17} aria-hidden="true" />
+          执行时序分析
+        </button>
+        {(analysisResult || runQueries.error) && (
+          <div className={`notice ${runQueries.error || analysisResult?.status === 'error' ? 'error' : 'ok'}`}>
+            {String(runQueries.error?.message ?? analysisResult?.message ?? '时序分析查询完成')}
+          </div>
+        )}
+      </aside>
+
+      <div className="panel log-filter-panel full-span">
+        <PanelHeading eyebrow="Filter" title="运行日志过滤" icon={Filter} compact />
+        <div className="log-filter-grid">
+          <label>
+            <span>来源</span>
+            <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+              {logSourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>级别</span>
+            <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
+              {logLevelOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="log-search-field">
+            <span>关键词</span>
+            <input
+              inputMode="search"
+              type="search"
+              value={keyword}
+              placeholder="事件、消息、类别、状态…"
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+          </label>
+          <label className="toggle-control">
+            <input
+              type="checkbox"
+              checked={errorOnly}
+              onChange={(event) => setErrorOnly(event.target.checked)}
+            />
+            只看错误
+          </label>
+          <label className="toggle-control">
+            <input
+              type="checkbox"
+              checked={autoScroll}
+              onChange={(event) => setAutoScroll(event.target.checked)}
+            />
+            自动滚动
+          </label>
+          <button type="button" onClick={() => setNewestFirst((current) => !current)}>
+            <ArrowDownUp size={17} aria-hidden="true" />
+            {newestFirst ? '最新在前' : '最早在前'}
+          </button>
+        </div>
+      </div>
+
+      <div className="panel terminal-log-panel full-span">
+        <PanelHeading eyebrow="Runtime Log" title="运行日志" icon={Terminal} compact />
+        <div className="terminal-log" aria-live="polite">
+          {logEvents.isError && <div className="terminal-empty">{logEvents.error.message}</div>}
+          {!logEvents.isError && !visibleEvents.length && <div className="terminal-empty">等待运行日志…</div>}
+          {visibleEvents.map((event) => (
+            <LogEventRow event={event} key={event.id} />
+          ))}
+          <div ref={logEndRef} />
+        </div>
+      </div>
+
+      <div className="panel full-span">
+        <PanelHeading eyebrow="SQL Results" title="查询语句与结果" icon={Database} compact />
+        {!queryCards.length && (
+          <div className="query-preview-list">
+            {availableQueries.map((query) => (
+              <article className="query-result-card" key={query.id}>
+                <div className="query-result-head">
+                  <strong>S{19 + query.id} · {query.title}</strong>
+                  <span className="mini-status warn">待执行</span>
+                </div>
+                <pre className="sql-code">{query.sql}</pre>
+              </article>
+            ))}
+          </div>
+        )}
+        {queryCards.length > 0 && (
+          <div className="query-preview-list">
+            {queryCards.map((result) => (
+              <SqlResultCard key={result.id} result={result} />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function LogEventRow({ event }: { event: UiLogEvent }) {
+  return (
+    <article className={`log-event-row ${event.level}`}>
+      <div className="log-event-meta">
+        <span>{formatDateTime(event.time)}</span>
+        <span className={`mini-status ${event.level}`}>{event.level}</span>
+        <span>{event.source}</span>
+        <strong>{event.event}</strong>
+      </div>
+      <p>{event.message}</p>
+      {Object.keys(event.details ?? {}).length > 0 && (
+        <pre>{formatLogDetails(event.details)}</pre>
+      )}
+    </article>
+  )
+}
+
+function SqlResultCard({ result }: { result: AnalysisQueryResult }) {
+  const columns = result.columns.length
+    ? result.columns
+    : Array.from(new Set(result.rows.flatMap((row) => Object.keys(row))))
+
+  return (
+    <article className={`query-result-card ${result.status}`}>
+      <div className="query-result-head">
+        <strong>S{19 + result.id} · {result.title}</strong>
+        <span className={`mini-status ${result.status === 'ok' ? 'ok' : 'error'}`}>{result.status}</span>
+      </div>
+      <pre className="sql-code">{result.sql}</pre>
+      {result.error && <div className="notice error">{result.error}</div>}
+      {!result.error && !result.rows.length && <div className="notice warn">查询完成，当前时间窗口暂无记录</div>}
+      {!!result.rows.length && (
+        <div className="result-table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                {columns.map((column) => (
+                  <th key={column}>{column}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {result.rows.map((row, rowIndex) => (
+                <tr key={`${result.id}-${rowIndex}`}>
+                  {columns.map((column) => (
+                    <td key={column}>{formatValue(row[column])}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="query-result-foot">
+        <span>{numberFormatter.format(result.row_count)} rows</span>
+        {result.truncated && <span>结果已截取</span>}
+      </div>
+    </article>
+  )
+}
+
 function ResultMetaTable({
   rows,
   emptyText,
@@ -2502,6 +2832,18 @@ function formatValue(value: unknown): string {
     return JSON.stringify(value)
   }
   return String(value)
+}
+
+function formatLogDetails(value: Record<string, unknown>): string {
+  return JSON.stringify(value, null, 2)
+}
+
+function boundedInteger(value: string, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+  return Math.max(min, Math.min(max, parsed))
 }
 
 function detectionBoxStyle(

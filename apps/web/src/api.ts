@@ -104,6 +104,63 @@ export type ActionResponse = {
   [key: string]: unknown
 }
 
+export type LogLevel = 'info' | 'ok' | 'warn' | 'error'
+
+export type UiLogEvent = {
+  id: string
+  time: string
+  source: string
+  level: LogLevel
+  event: string
+  message: string
+  details: Record<string, unknown>
+}
+
+export type LogsResponse = {
+  status: string
+  events: UiLogEvent[]
+}
+
+export type WriteRunStatus = {
+  status: string
+  run: {
+    run_id: string
+    status: string
+    message: string
+    started_at: string | null
+    finished_at: string | null
+    last_result?: Record<string, unknown> | null
+  }
+}
+
+export type AnalysisQueryItem = {
+  id: number
+  title: string
+  sql: string
+}
+
+export type AnalysisQueryResult = AnalysisQueryItem & {
+  status: string
+  columns: string[]
+  rows: Record<string, unknown>[]
+  row_count: number
+  truncated?: boolean
+  error?: string
+}
+
+export type AnalysisQueriesResponse = {
+  status: string
+  queries: AnalysisQueryItem[]
+}
+
+export type AnalysisRunResponse = {
+  status: string
+  message: string
+  queries: AnalysisQueryItem[]
+  results: AnalysisQueryResult[]
+  error?: string
+}
+
 export type ConfigValue = string | number | boolean
 export const API_BASE_STORAGE_KEY = 'cv-stream-timescale-api-base-url'
 export const API_TOKEN_STORAGE_KEY = 'cv-stream-timescale-api-token'
@@ -287,6 +344,63 @@ export async function fetchCaptureFrame(): Promise<{ blob: Blob; version: number
 
 export async function fetchAnalysisSummary(): Promise<AnalysisSummary> {
   return readJson('/api/analysis/summary')
+}
+
+export async function fetchLogEvents(params?: {
+  source?: string
+  level?: string
+  q?: string
+  limit?: number
+}): Promise<LogsResponse> {
+  const search = new URLSearchParams()
+  if (params?.source) {
+    search.set('source', params.source)
+  }
+  if (params?.level) {
+    search.set('level', params.level)
+  }
+  if (params?.q) {
+    search.set('q', params.q)
+  }
+  if (params?.limit) {
+    search.set('limit', String(params.limit))
+  }
+  const suffix = search.toString() ? `?${search}` : ''
+  return readJson(`/api/logs/events${suffix}`)
+}
+
+export async function fetchWriteRunStatus(): Promise<WriteRunStatus> {
+  return readJson('/api/logs/write-run/status')
+}
+
+export async function startWriteRun(values: {
+  max_frames: number
+  frame_interval?: number
+}): Promise<ActionResponse> {
+  return readJson('/api/logs/write-run/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(values),
+  })
+}
+
+export async function stopWriteRun(): Promise<ActionResponse> {
+  return readJson('/api/logs/write-run/stop', { method: 'POST' })
+}
+
+export async function fetchAnalysisQueries(): Promise<AnalysisQueriesResponse> {
+  return readJson('/api/logs/analysis/queries')
+}
+
+export async function runAnalysisQueries(values?: {
+  query_ids?: number[]
+  row_limit?: number
+}): Promise<AnalysisRunResponse> {
+  return readJson('/api/logs/analysis/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(values ?? {}),
+  })
 }
 
 export async function reloadConfig(): Promise<ActionResponse> {

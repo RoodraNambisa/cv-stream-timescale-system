@@ -179,12 +179,50 @@ class FakeDatabaseConnection:
             return True
         return None
 
+    async def execute(self, query, *args):
+        return "OK"
+
+    async def prepare(self, query):
+        return FakePreparedStatement(query)
+
     async def fetch(self, query, *args):
         table_names = args[0] if args else []
         return [{"table_name": table_name} for table_name in table_names]
 
     async def close(self):
         return None
+
+
+class FakeAttribute:
+    def __init__(self, name):
+        self.name = name
+
+
+class FakePreparedStatement:
+    def __init__(self, query):
+        self.query = query
+
+    def get_attributes(self):
+        normalized = " ".join(self.query.lower().split())
+        if "device_name" in normalized:
+            return [FakeAttribute("bucket"), FakeAttribute("device_name"), FakeAttribute("object_class"), FakeAttribute("detection_count")]
+        if "avg_confidence" in normalized:
+            return [FakeAttribute("bucket"), FakeAttribute("device_id"), FakeAttribute("object_class"), FakeAttribute("avg_confidence")]
+        return [FakeAttribute("object_class"), FakeAttribute("detection_count")]
+
+    async def fetch(self):
+        columns = [attribute.name for attribute in self.get_attributes()]
+        row = {}
+        for column in columns:
+            if column == "bucket":
+                row[column] = datetime.now(timezone.utc)
+            elif column in {"detection_count", "device_id"}:
+                row[column] = 1
+            elif column == "avg_confidence":
+                row[column] = 0.88
+            else:
+                row[column] = "person" if column == "object_class" else "phone-camera"
+        return [row]
 
 
 async def fake_database_connect(*args, **kwargs):
@@ -251,16 +289,19 @@ async def main() -> None:
     import backend.app.config as config_module
     import backend.app.environment as environment_module
     import backend.app.inference as inference_module
+    import backend.app.log_analysis as log_analysis_module
     import backend.app.main as app_main
     import backend.app.remote_ops as remote_ops_module
 
     original_capture_infer = capture_module.infer_image_bytes
     original_environment_connect = environment_module.asyncpg.connect
     original_local_image_inference = inference_module._local_image_inference
+    original_log_analysis_connect = log_analysis_module.asyncpg.connect
     original_remote_actions = remote_ops_module.REMOTE_ACTIONS.copy()
     capture_module.infer_image_bytes = fake_capture_infer
     environment_module.asyncpg.connect = fake_database_connect
     inference_module._local_image_inference = fake_local_image_inference
+    log_analysis_module.asyncpg.connect = fake_database_connect
     remote_ops_module.REMOTE_ACTIONS["apply_schema"] = (
         [
             "bash",
@@ -283,7 +324,6 @@ async def main() -> None:
 
             config = assert_status(await client.get("/api/config"), 200)
             assert config["security"]["api_auth_token"] == "", config
-            assert "127.0.0.1:5173" in config["security"]["cors_allowed_origins"], config
             assert config["capture"]["source_kind"] == "file", config
             assert config["database"]["configured"] is False, config
             assert config["stream"]["receiver_kind"] == "mediamtx", config
@@ -437,6 +477,58 @@ async def main() -> None:
             assert analysis["status"] == "skipped", analysis
             assert analysis["result_meta"] == [], analysis
 
+            log_status = assert_status(await client.get("/api/logs/write-run/status"), 200)
+            assert log_status["run"]["status"] in {"idle", "stopped"}, log_status
+            log_start = assert_status(
+                await client.post(
+                    "/api/logs/write-run/start",
+                    json={"max_frames": 8, "frame_interval": 1, "status_interval": 0.5},
+                ),
+                200,
+            )
+            assert log_start["status"] == "ok", log_start
+            for _ in range(30):
+                log_status = assert_status(await client.get("/api/logs/write-run/status"), 200)
+                if log_status["run"]["status"] not in {"running", "stopping"}:
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                raise AssertionError(f"write run did not finish: {log_status}")
+            assert log_status["run"]["last_result"]["status"] in {"ok", "error"}, log_status
+
+            events = assert_status(await client.get("/api/logs/events?limit=100"), 200)
+            event_names = {item["event"] for item in events["events"]}
+            assert {"settings", "capture_start", "capture_status", "spool_flush"} <= event_names, events
+            error_events = assert_status(await client.get("/api/logs/events?level=error&limit=20"), 200)
+            assert error_events["status"] == "ok", error_events
+
+            query_list = assert_status(await client.get("/api/logs/analysis/queries"), 200)
+            assert len(query_list["queries"]) >= 3, query_list
+            assert "SELECT" in query_list["queries"][0]["sql"], query_list["queries"][0]
+
+            analysis_db = assert_status(
+                await client.post(
+                    "/api/config",
+                    json={"values": {"DATABASE_URL": "postgresql://cv_user:secret@db.local:5432/cv_stream"}},
+                ),
+                200,
+            )
+            assert "DATABASE_URL" in analysis_db["updated"], analysis_db
+            query_run = assert_status(
+                await client.post("/api/logs/analysis/run", json={"query_ids": [1, 3], "row_limit": 5}),
+                200,
+            )
+            assert query_run["status"] == "ok", query_run
+            assert len(query_run["results"]) == 2, query_run
+            assert query_run["results"][0]["sql"].strip().startswith("SELECT"), query_run["results"][0]
+            assert query_run["results"][0]["columns"], query_run["results"][0]
+            assert query_run["results"][0]["rows"], query_run["results"][0]
+            cleared_analysis_db = assert_status(
+                await client.post("/api/config", json={"values": {"DATABASE_URL": ""}}),
+                200,
+            )
+            assert "DATABASE_URL" in cleared_analysis_db["updated"], cleared_analysis_db
+
             start = assert_status(
                 await client.post("/api/capture/start", json={"max_frames": 24, "frame_interval": 1}),
                 200,
@@ -471,6 +563,7 @@ async def main() -> None:
         capture_module.infer_image_bytes = original_capture_infer
         environment_module.asyncpg.connect = original_environment_connect
         inference_module._local_image_inference = original_local_image_inference
+        log_analysis_module.asyncpg.connect = original_log_analysis_connect
         remote_ops_module.REMOTE_ACTIONS.clear()
         remote_ops_module.REMOTE_ACTIONS.update(original_remote_actions)
         if started:

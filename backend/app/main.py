@@ -20,13 +20,22 @@ from .config import (
 from .detections import DetectionBatch, DetectionRecord
 from .environment import collect_environment, config_summary
 from .inference import infer_image_bytes, inference_status
+from .log_analysis import (
+    AnalysisRunRequest,
+    load_analysis_query_sections,
+    run_analysis_query_sections,
+)
 from .remote_ops import RemoteActionRequest, run_remote_action
 from .spool import DetectionSpool
+from .ui_events import UiEventLog
 from .video import probe_video_source, video_config_summary
+from .write_flow import WriteRunManager, WriteRunStartRequest
 
 settings = get_settings()
 spool = DetectionSpool()
 capture = CaptureManager(spool)
+ui_events = UiEventLog()
+write_runs = WriteRunManager(capture, spool, ui_events)
 AUTH_EXEMPT_PATHS = {"/api/health"}
 WEB_DIST_DIR = PROJECT_ROOT / "apps" / "web" / "dist"
 GRAFANA_PROXY_BASE_URL = "http://127.0.0.1:3000"
@@ -105,7 +114,15 @@ def _add_cors_headers(request: Request, response) -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
+    await ui_events.initialize()
     await spool.start(get_settings())
+    await ui_events.append(
+        source="system",
+        level="ok",
+        event="api_start",
+        message="后端服务已启动",
+        details={"version": get_settings().service_version},
+    )
 
 
 @app.on_event("shutdown")
@@ -220,6 +237,50 @@ async def get_analysis_summary() -> dict:
 @app.post("/api/spool/flush")
 async def flush_spool() -> dict:
     return await spool.flush(get_settings())
+
+
+@app.get("/api/logs/events")
+async def logs_events(
+    source: str = "",
+    level: str = "",
+    q: str = "",
+    limit: int = 200,
+) -> dict:
+    return {
+        "status": "ok",
+        "events": await ui_events.list_events(source=source, level=level, q=q, limit=limit),
+    }
+
+
+@app.post("/api/logs/write-run/start")
+async def start_write_run(request: Optional[WriteRunStartRequest] = None) -> dict:
+    return await write_runs.start(request)
+
+
+@app.post("/api/logs/write-run/stop")
+async def stop_write_run() -> dict:
+    return await write_runs.stop()
+
+
+@app.get("/api/logs/write-run/status")
+async def write_run_status() -> dict:
+    return {
+        "status": "ok",
+        "run": await write_runs.status(),
+    }
+
+
+@app.get("/api/logs/analysis/queries")
+async def analysis_log_queries() -> dict:
+    return {
+        "status": "ok",
+        "queries": load_analysis_query_sections(),
+    }
+
+
+@app.post("/api/logs/analysis/run")
+async def run_analysis_log_queries(request: Optional[AnalysisRunRequest] = None) -> dict:
+    return await run_analysis_query_sections(get_settings(), ui_events, request)
 
 
 @app.get("/api/capture/status")

@@ -5,9 +5,10 @@ import asyncio
 import json
 from typing import Any
 
-from backend.app.capture import CaptureManager, CaptureStartRequest
-from backend.app.config import get_settings
+from backend.app.capture import CaptureManager
 from backend.app.spool import DetectionSpool
+from backend.app.ui_events import sanitize_payload
+from backend.app.write_flow import WriteFlowOptions, run_write_flow
 
 
 def parse_args() -> argparse.Namespace:
@@ -25,62 +26,34 @@ def parse_args() -> argparse.Namespace:
 
 async def run() -> int:
     args = parse_args()
-    settings = get_settings()
     spool = DetectionSpool()
     capture = CaptureManager(spool)
 
-    await spool.start(settings)
-    request = CaptureStartRequest(
-        max_frames=args.max_frames,
-        frame_interval=args.frame_interval,
-        device_id=args.device_id,
-        task_id=args.task_id,
+    async def emit(_level: str, event: str, _message: str, payload: dict[str, Any]) -> None:
+        _print_event(event, payload)
+
+    result = await run_write_flow(
+        capture,
+        spool,
+        WriteFlowOptions(
+            max_frames=args.max_frames or 120,
+            frame_interval=args.frame_interval,
+            device_id=args.device_id,
+            task_id=args.task_id,
+            status_interval=args.status_interval,
+            flush_on_exit=not args.no_flush_on_exit,
+            shutdown_capture_on_exit=True,
+            stop_spool_on_exit=True,
+        ),
+        emit,
     )
-
-    had_error = False
-    try:
-        _print_event("settings", _settings_summary(settings))
-        start_result = await capture.start(request)
-        _print_event("capture_start", start_result)
-        if start_result.get("status") not in {"ok", "running"}:
-            had_error = True
-
-        while True:
-            state = await capture.status()
-            _print_event("capture_status", state)
-            if state["status"] == "error":
-                had_error = True
-            if state["status"] not in {"running", "stopping"}:
-                break
-            await asyncio.sleep(max(args.status_interval, 0.5))
-    finally:
-        stop_result = await capture.stop()
-        _print_event("capture_stop", stop_result)
-        if not args.no_flush_on_exit:
-            flush_result = await spool.flush(get_settings())
-            _print_event("spool_flush", flush_result)
-        await capture.shutdown()
-        await spool.stop()
-
-    final_state = await capture.status()
-    return 1 if had_error or final_state["status"] not in {"stopped", "idle"} else 0
-
-
-def _settings_summary(settings: Any) -> dict[str, Any]:
-    return {
-        "capture_source_kind": settings.capture_source_kind,
-        "capture_source_url": settings.capture_source_url,
-        "inference_mode": "remote" if settings.inference_endpoint else "local",
-        "inference_endpoint": settings.inference_endpoint,
-        "database_configured": bool(settings.database_url),
-        "spool_sqlite_path": str(settings.spool_sqlite_path),
-    }
+    return 0 if result["status"] == "ok" else 1
 
 
 def _print_event(event: str, payload: Any) -> None:
     print(
         json.dumps(
-            {"event": event, "payload": payload},
+            {"event": event, "payload": sanitize_payload(payload)},
             ensure_ascii=False,
             default=str,
         ),
