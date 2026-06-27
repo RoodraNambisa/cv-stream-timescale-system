@@ -194,10 +194,8 @@ async def run_write_flow(
         await emit("ok", "capture_stop", str(stop_result.get("message") or "采集任务已停止"), stop_result)
 
         if options.flush_on_exit:
-            flush_result = await spool.flush(get_settings())
-            flush_level = _level_for_flush(flush_result)
-            await emit(flush_level, "spool_flush", _flush_message(flush_result), flush_result)
-            if flush_result.get("status") == "failed":
+            flush_result = await _flush_spool_batches(spool, emit)
+            if flush_result.get("had_error"):
                 had_error = True
 
         if options.shutdown_capture_on_exit:
@@ -245,6 +243,7 @@ async def run_sample_write_flow(
     )
 
     batch: list[DetectionRecord] = []
+    batch_index = 0
     for frame_index in range(1, options.max_frames + 1):
         if (frame_index - 1) % frame_interval != 0:
             continue
@@ -259,21 +258,54 @@ async def run_sample_write_flow(
         )
         batch.extend(records)
         generated += len(records)
+        if _should_emit_sample_frame(frame_index, options.max_frames):
+            await emit(
+                "info",
+                "sample_frame_detected",
+                _sample_frame_message(frame_index, options.max_frames, records, generated),
+                {
+                    "frame_index": frame_index,
+                    "max_frames": options.max_frames,
+                    "detections": len(records),
+                    "generated": generated,
+                    "classes": [record.object_class for record in records],
+                },
+            )
 
         if len(batch) >= 24:
+            batch_index += 1
             inserted_ids = await spool.enqueue(batch, settings)
             queued += len(inserted_ids)
             await emit(
                 "info",
                 "sample_input_batch",
-                f"样例输入已入队 {queued} 条检测记录",
-                {"frame_index": frame_index, "queued": queued, "generated": generated},
+                f"SQLite 缓存写入第 {batch_index} 批 · 本批 {len(inserted_ids)} 条 · 累计 {queued} 条",
+                {
+                    "batch_index": batch_index,
+                    "frame_index": frame_index,
+                    "batch_size": len(inserted_ids),
+                    "queued": queued,
+                    "generated": generated,
+                },
             )
             batch = []
 
     if batch:
+        batch_index += 1
         inserted_ids = await spool.enqueue(batch, settings)
         queued += len(inserted_ids)
+        await emit(
+            "info",
+            "sample_input_batch",
+            f"SQLite 缓存写入第 {batch_index} 批 · 本批 {len(inserted_ids)} 条 · 累计 {queued} 条",
+            {
+                "batch_index": batch_index,
+                "frame_index": options.max_frames,
+                "batch_size": len(inserted_ids),
+                "queued": queued,
+                "generated": generated,
+            },
+        )
 
     await emit(
         "ok",
@@ -283,10 +315,8 @@ async def run_sample_write_flow(
     )
 
     if options.flush_on_exit:
-        flush_result = await spool.flush(get_settings())
-        flush_level = _level_for_flush(flush_result)
-        await emit(flush_level, "spool_flush", _flush_message(flush_result), flush_result)
-        if flush_result.get("status") == "failed":
+        flush_result = await _flush_spool_batches(spool, emit)
+        if flush_result.get("had_error"):
             had_error = True
 
     status = "error" if had_error else "ok"
@@ -354,6 +384,70 @@ def _sample_records_for_frame(
     return records
 
 
+async def _flush_spool_batches(
+    spool: DetectionSpool,
+    emit: EventEmitter,
+    max_rounds: int = 20,
+) -> dict[str, Any]:
+    total_selected = 0
+    total_synced = 0
+    total_failed = 0
+    had_error = False
+    last_result: dict[str, Any] = {}
+
+    for batch_index in range(1, max_rounds + 1):
+        flush_result = await spool.flush(get_settings())
+        last_result = flush_result
+        total_selected += int(flush_result.get("selected") or 0)
+        total_synced += int(flush_result.get("synced") or 0)
+        total_failed += int(flush_result.get("failed") or 0)
+        flush_level = _level_for_flush(flush_result)
+        await emit(
+            flush_level,
+            "spool_flush",
+            f"批量写库第 {batch_index} 批 · {_flush_message(flush_result)}",
+            {"batch_index": batch_index, **flush_result},
+        )
+
+        status = str(flush_result.get("status") or "")
+        if status == "failed":
+            had_error = True
+            break
+        if status in {"idle", "skipped"}:
+            break
+        if int(flush_result.get("selected") or 0) == 0:
+            break
+
+    return {
+        "status": str(last_result.get("status") or "idle"),
+        "selected": total_selected,
+        "synced": total_synced,
+        "failed": total_failed,
+        "had_error": had_error,
+        "last_result": last_result,
+    }
+
+
+def _should_emit_sample_frame(frame_index: int, max_frames: int) -> bool:
+    if frame_index <= 16:
+        return True
+    interval = max(1, max_frames // 18)
+    return frame_index == max_frames or frame_index % interval == 0
+
+
+def _sample_frame_message(
+    frame_index: int,
+    max_frames: int,
+    records: list[DetectionRecord],
+    generated: int,
+) -> str:
+    if records:
+        classes = "、".join(f"{record.object_class} {record.confidence:.2f}" for record in records[:3])
+    else:
+        classes = "未检出目标"
+    return f"样例帧 {frame_index:04d}/{max_frames:04d} · {classes} · 累计生成 {generated} 条"
+
+
 def _settings_summary(settings: Settings) -> dict[str, Any]:
     return {
         "capture_source_kind": settings.capture_source_kind,
@@ -412,7 +506,7 @@ def _source_for_event(event: str) -> str:
         return "capture"
     if event.startswith("spool"):
         return "spool"
-    if event.startswith("settings") or event.startswith("write"):
+    if event.startswith("settings") or event.startswith("write") or event.startswith("sample"):
         return "write"
     return "system"
 

@@ -134,6 +134,7 @@ const logLevelOptions: Array<{ value: 'all' | LogLevel; label: string }> = [
 ]
 
 type LogPaneKey = 'runtime' | 'write' | 'analysis' | 'maintenance'
+type LogDisplayMode = 'console' | 'plain'
 
 const logPanes: Array<{ key: LogPaneKey; label: string; icon: typeof Activity }> = [
   { key: 'runtime', label: '运行日志', icon: Terminal },
@@ -1983,6 +1984,7 @@ function LogsPage({
 }) {
   const queryClient = useQueryClient()
   const [activePane, setActivePane] = useState<LogPaneKey>('runtime')
+  const [logDisplayMode, setLogDisplayMode] = useState<LogDisplayMode>('console')
   const [sourceFilter, setSourceFilter] = useState('all')
   const [levelFilter, setLevelFilter] = useState('all')
   const [keyword, setKeyword] = useState('')
@@ -1995,6 +1997,7 @@ function LogsPage({
   const [clearConfirm, setClearConfirm] = useState('')
   const [selectedQueryId, setSelectedQueryId] = useState('')
   const logEndRef = useRef<HTMLDivElement | null>(null)
+  const plainLogRef = useRef<HTMLPreElement | null>(null)
   const runningCapture = captureStatus?.status === 'running' || captureStatus?.status === 'stopping'
 
   const logEvents = useQuery({
@@ -2072,6 +2075,7 @@ function LogsPage({
 
   const events = logEvents.data?.events ?? []
   const visibleEvents = newestFirst ? [...events].reverse() : events
+  const plainLogText = plainLogLines(visibleEvents, logEvents.isError ? logEvents.error.message : '').join('\n')
   const currentRun = writeRun.data?.run
   const runActive = currentRun?.status === 'running' || currentRun?.status === 'stopping'
   const analysisResult = runQueries.data
@@ -2107,8 +2111,11 @@ function LogsPage({
   useEffect(() => {
     if (autoScroll && !newestFirst) {
       logEndRef.current?.scrollIntoView({ block: 'end' })
+      if (logDisplayMode === 'plain' && plainLogRef.current) {
+        plainLogRef.current.scrollTop = plainLogRef.current.scrollHeight
+      }
     }
-  }, [autoScroll, newestFirst, events.length])
+  }, [autoScroll, newestFirst, events.length, logDisplayMode])
 
   return (
     <section className="logs-workspace terminal-first-workspace">
@@ -2125,6 +2132,24 @@ function LogsPage({
             <span>入队：{numberFormatter.format(captureStatus?.detections_queued ?? 0)}</span>
           </div>
         </header>
+
+        <div className="log-display-switch" role="group" aria-label="日志显示模式">
+          <span>显示模式</span>
+          <button
+            type="button"
+            className={logDisplayMode === 'console' ? 'active' : ''}
+            onClick={() => setLogDisplayMode('console')}
+          >
+            控制台
+          </button>
+          <button
+            type="button"
+            className={logDisplayMode === 'plain' ? 'active' : ''}
+            onClick={() => setLogDisplayMode('plain')}
+          >
+            纯文本终端
+          </button>
+        </div>
 
         <div className="log-console-tabs" role="tablist" aria-label="日志视图">
           {logPanes.map((pane) => {
@@ -2328,14 +2353,20 @@ function LogsPage({
           </div>
         )}
 
-        <div className="terminal-log" aria-live="polite">
-          {logEvents.isError && <div className="terminal-empty">{logEvents.error.message}</div>}
-          {!logEvents.isError && !visibleEvents.length && <div className="terminal-empty">等待运行日志...</div>}
-          {visibleEvents.map((event) => (
-            <LogEventRow event={event} key={event.id} />
-          ))}
-          <div ref={logEndRef} />
-        </div>
+        {logDisplayMode === 'plain' ? (
+          <pre className="plain-terminal-log" aria-live="polite" ref={plainLogRef}>
+            {plainLogText || '等待运行日志...'}
+          </pre>
+        ) : (
+          <div className="terminal-log" aria-live="polite">
+            {logEvents.isError && <div className="terminal-empty">{logEvents.error.message}</div>}
+            {!logEvents.isError && !visibleEvents.length && <div className="terminal-empty">等待运行日志...</div>}
+            {visibleEvents.map((event) => (
+              <LogEventRow event={event} key={event.id} />
+            ))}
+            <div ref={logEndRef} />
+          </div>
+        )}
       </div>
 
       {activePane === 'analysis' && (
@@ -3007,6 +3038,69 @@ function formatValue(value: unknown): string {
 
 function formatLogDetails(value: Record<string, unknown>): string {
   return JSON.stringify(value, null, 2)
+}
+
+function plainLogLines(events: UiLogEvent[], errorMessage: string): string[] {
+  if (errorMessage) {
+    return [`错误 ${errorMessage}`]
+  }
+  return events.flatMap((event) => {
+    const base = `${formatDateTime(event.time)}  ${logLevelLabel(event.level)}  ${logSourceLabel(event.source)}  ${event.message}`
+    const details = plainLogDetails(event.details)
+    return details ? [base, `    ${details}`] : [base]
+  })
+}
+
+function plainLogDetails(details: Record<string, unknown>): string {
+  const keys = [
+    'frame_index',
+    'max_frames',
+    'detections',
+    'classes',
+    'generated',
+    'batch_index',
+    'batch_size',
+    'queued',
+    'selected',
+    'synced',
+    'failed',
+    'status',
+  ]
+  return keys
+    .filter((key) => details[key] !== undefined)
+    .map((key) => `${plainDetailLabel(key)}=${formatPlainDetailValue(details[key])}`)
+    .join('  ')
+}
+
+function plainDetailLabel(key: string): string {
+  const labels: Record<string, string> = {
+    frame_index: '帧',
+    max_frames: '总帧',
+    detections: '检测',
+    classes: '类别',
+    generated: '生成',
+    batch_index: '批次',
+    batch_size: '本批',
+    queued: '入队',
+    selected: '选中',
+    synced: '同步',
+    failed: '失败',
+    status: '状态',
+  }
+  return labels[key] ?? key
+}
+
+function formatPlainDetailValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.join(',')
+  }
+  if (typeof value === 'number') {
+    return numberFormatter.format(value)
+  }
+  if (value === null || value === undefined || value === '') {
+    return '-'
+  }
+  return String(value)
 }
 
 function logLevelLabel(level: LogLevel | string): string {
