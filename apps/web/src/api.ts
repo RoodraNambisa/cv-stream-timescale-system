@@ -274,7 +274,12 @@ function withAuthHeaders(init?: RequestInit): RequestInit | undefined {
 
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const resolvedUrl = resolveApiUrl(url)
-  const response = await fetch(resolvedUrl, withAuthHeaders(init))
+  let response: Response
+  try {
+    response = await fetch(resolvedUrl, withAuthHeaders(init))
+  } catch (error) {
+    throw new Error(networkErrorMessage(resolvedUrl, error), { cause: error })
+  }
 
   if (!response.ok) {
     let detail: string
@@ -293,6 +298,20 @@ async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json()
+}
+
+function networkErrorMessage(url: string, error: unknown): string {
+  const path = safeUrlPath(url)
+  const reason = error instanceof Error && error.message ? `（${error.message}）` : ''
+  return `请求接口失败：${path}。请检查 API 地址、API token，或刷新页面后重试${reason}`
+}
+
+function safeUrlPath(url: string): string {
+  try {
+    return new URL(url, window.location.href).pathname
+  } catch {
+    return url.split('?')[0] || '/api'
+  }
 }
 
 export async function probeApiBaseUrl(value: string): Promise<HealthResponse> {
@@ -334,12 +353,17 @@ export async function fetchCaptureStatus(): Promise<CaptureStatus> {
 
 export async function fetchCaptureFrame(): Promise<{ blob: Blob; version: number }> {
   const resolvedUrl = resolveApiUrl(`/api/capture/frame.jpg?t=${Date.now()}`)
-  const response = await fetch(
-    resolvedUrl,
-    withAuthHeaders({
-      cache: 'no-store',
-    }),
-  )
+  let response: Response
+  try {
+    response = await fetch(
+      resolvedUrl,
+      withAuthHeaders({
+        cache: 'no-store',
+      }),
+    )
+  } catch (error) {
+    throw new Error(networkErrorMessage(resolvedUrl, error), { cause: error })
+  }
 
   if (!response.ok) {
     throw new Error(`${resolvedUrl} failed: ${response.status}`)
